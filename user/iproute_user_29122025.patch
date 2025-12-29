@@ -1,0 +1,658 @@
+diff --git a/ip/Makefile b/ip/Makefile
+index 2ae9df8..91f7bd9 100644
+--- a/ip/Makefile
++++ b/ip/Makefile
+@@ -5,7 +5,7 @@ IPOBJ=ip.o ipaddress.o ipaddrlabel.o iproute.o iprule.o ipnetns.o \
+     ipxfrm.o xfrm_state.o xfrm_policy.o xfrm_monitor.o iplink_dummy.o \
+     iplink_ifb.o iplink_nlmon.o iplink_team.o iplink_vcan.o iplink_vxcan.o \
+     iplink_vlan.o link_veth.o link_gre.o iplink_can.o iplink_xdp.o \
+-    iplink_macvlan.o ipl2tp.o link_vti.o link_vti6.o link_xfrm.o \
++    iplink_macvlan.o ipl2tp.o link_vti.o link_vti6.o link_xfrm.o link_pbb.o \
+     iplink_vxlan.o tcp_metrics.o iplink_ipoib.o ipnetconf.o link_ip6tnl.o \
+     link_iptnl.o link_gre6.o iplink_bond.o iplink_bond_slave.o iplink_hsr.o \
+     iplink_bridge.o iplink_bridge_slave.o ipfou.o iplink_ipvlan.o \
+diff --git a/ip/ip.c b/ip/ip.c
+index b07a5c7..0ba29e7 100644
+--- a/ip/ip.c
++++ b/ip/ip.c
+@@ -68,7 +68,7 @@ static void usage(void)
+ 		"                   macsec | maddress | monitor | mptcp | mroute | mrule |\n"
+ 		"                   neighbor | neighbour | netconf | netns | nexthop | ntable |\n"
+ 		"                   ntbl | route | rule | sr | tap | tcpmetrics |\n"
+-		"                   token | tunnel | tuntap | vrf | xfrm }\n"
++		"                   token | tunnel | tuntap | vrf | xfrm | pbbb | pbbi }\n"
+ 		"       OPTIONS := { -V[ersion] | -s[tatistics] | -d[etails] | -r[esolve] |\n"
+ 		"                    -h[uman-readable] | -iec | -j[son] | -p[retty] |\n"
+ 		"                    -f[amily] { inet | inet6 | mpls | bridge | link } |\n"
+diff --git a/ip/iplink.c b/ip/iplink.c
+index 18b2ea2..3ecd6de 100644
+--- a/ip/iplink.c
++++ b/ip/iplink.c
+@@ -57,7 +57,7 @@ void iplink_types_usage(void)
+ 		"          macsec | macvlan | macvtap |\n"
+ 		"          netdevsim | nlmon | rmnet | sit | team | team_slave |\n"
+ 		"          vcan | veth | vlan | vrf | vti | vxcan | vxlan | wwan |\n"
+-		"          xfrm }\n");
++		"          xfrm | pbbb | pbbi }\n");
+ }
+ 
+ void iplink_usage(void)
+diff --git a/include/uapi/linux/if_pbb.h b/include/uapi/linux/if_pbb.h
+new file mode 100644
+index 0000000..7d2995f
+--- /dev/null
++++ b/include/uapi/linux/if_pbb.h
+@@ -0,0 +1,65 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ *  Copyright (C) 2025 Demon
++ *
++ * Author: Demon <soumikbanerjee68@yahoo.com>
++ * User Space Includes for Barebones Provider Backbone Bridging Virtual Driver
++ * (inspired from Linux Bridge, MacVlan, Veth and everything else open source!)
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ *
++ */
++
++#ifndef __NET_PBB_H_
++#define __NET_PBB_H_
++
++enum {
++	IFLA_PBB_I_UNSPEC,
++	IFLA_PBB_I_CORE_BRIDGE_INFO,
++	IFLA_PBB_I_CVID_INFO_RANGE_BEGIN,
++	IFLA_PBB_I_CVID_INFO_RANGE_END,
++	IFLA_PBB_I_CVID_INFO_ACTION,
++	IFLA_PBB_I_SVID_INFO_RANGE_BEGIN,
++	IFLA_PBB_I_SVID_INFO_RANGE_END,
++	IFLA_PBB_I_SVID_INFO_ACTION,
++	IFLA_PBB_I_ISID_INFO_RANGE_BEGIN,
++	IFLA_PBB_I_ISID_INFO_RANGE_END,
++	IFLA_PBB_I_ISID_TYPE,
++	IFLA_PBB_I_KEY_INFO_MAP_VERIFY,
++	IFLA_PBB_I_MAX,
++};
++
++enum pbb_i_sid_mode {
++	PBB_I_ISID_TYPE_SHARED,
++	PBB_I_ISID_TYPE_EXCL,
++	PBB_I_ISID_TYPE_MAX,
++};
++
++enum pbb_i_vid_info_action {
++	PBB_I_VID_INFO_ACTION_KEEP,
++	PBB_I_VID_INFO_ACTION_STRIP,
++	PBB_I_VID_INFO_ACTION_MAX,
++};
++
++enum {
++	IFLA_PBB_B_UNSPEC,
++	IFLA_PBB_B_LINK,
++	IFLA_PBB_B_B_VID_MODE,
++	IFLA_PBB_B_ISID_INFO_RANGE_BEGIN,
++	IFLA_PBB_B_ISID_INFO_RANGE_END,
++	IFLA_PBB_B_VID_INFO_RANGE_BEGIN,
++	IFLA_PBB_B_VID_INFO_RANGE_END,
++	IFLA_PBB_B_KEY_INFO_MAP_VERIFY,
++	IFLA_PBB_B_MAX,
++};
++
++enum pbb_b_mode {
++	PBB_B_MODE_DOT1Q,
++	PBB_B_MODE_DOT1AD,
++	PBB_B_MODE_MAX,
++};
++
++#endif //__NET_PBB_H_
+diff --git a/ip/link_pbb.c b/ip/link_pbb.c
+new file mode 100644
+index 0000000..96e6b38
+--- /dev/null
++++ b/ip/link_pbb.c
+@@ -0,0 +1,542 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ *  Copyright (C) 2025 Demon
++ *
++ * Author: Demon <soumikbanerjee68@yahoo.com>
++ * User Space Program for Barebones Provider Backbone Bridging
++ * (inspired from Linux Bridge, MacVlan, Veth and everything else open source!)
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ *
++ */
++
++#include <string.h>
++#include <net/if.h>
++#include "linux/if_pbb.h"
++
++#include "utils.h"
++#include "ip_common.h"
++
++#define pfx_err(lu, ...) {               \
++	fprintf(stderr, "%s: ", lu->id); \
++	fprintf(stderr, __VA_ARGS__);    \
++	fprintf(stderr, "\n");           \
++}
++
++static void print_pbbb_explain(struct link_util *lu, FILE *f)
++{
++        fprintf(f,
++                "Usage: ... %s link [inteface] b-vid-mode [dot1q|dot1ad] i-sid [I_SID_START-I_SID_END] b-vid [B_VID_START-B_VID_END]\n"
++                "\n"
++		"I-SID:	32-bit I-Component Vlan Tag/range to add\n"
++		"B-VID:	16-bit B-Component Vlan Tag/range to add\n",
++                lu->id
++        );
++}
++
++static void pbbb_explain(struct link_util *lu)
++{
++        print_pbbb_explain(lu, stderr);
++}
++
++static void print_pbbi_explain(struct link_util *lu, FILE *f, int lineno)
++{
++        fprintf(f,
++                "Usage: ... %s c-vid [C_VID_START-C_VID_END] c-vid-mode [keep|strip] s-vid [S_VID_START-S_VID_END] s-vid-mode [keep|strip] i-sid [shared|exclusive] [I_SID_START-I_SID_END]\n"
++                "\n"
++		"C-VID: 16-bit B-Component Vlan Tag/range to add\n"
++		"S-VID: 16-bit B-Component Vlan Tag/range to add\n"
++		"I-SID: 32-bit I-Component Vlan Tag/range to add\n"
++		"Line:%d\n",
++                lu->id,
++		lineno
++        );
++}
++
++static void pbbi_explain(struct link_util *lu, int lineno)
++{
++        print_pbbi_explain(lu, stderr, lineno);
++}
++
++static int pbb_i_sid_arg(const char *arg)
++{
++	fprintf(stderr,
++		"Error: argument of \"i-sid\" must be a positive integer [0-4294967295], not \"%s\"\n",
++		arg);
++	return -1;
++}
++
++static int pbbb_b_vid_arg(const char *arg)
++{
++	fprintf(stderr,
++		"Error: argument of \"b-vid\" must be a positive integer [0-4294967295], not \"%s\"\n",
++		arg);
++	return -1;
++}
++
++static int pbbb_nodev(const char *dev)
++{
++	fprintf(stderr,
++		"Error:Cannot find device \"%s\"\n",
++		dev);
++	return -1;
++}
++
++static int pbbb_b_mode_none_arg(void)
++{
++	fprintf(stderr,
++		"Error:PBB_B_VID value/range required valid B-VID Mode or DUMP INFO argument\n");
++	return -1;
++}
++
++static int pbbb_b_mode_info_map_verify_arg(__u8 mode, __u8 key_info_map_verify)
++{
++	fprintf(stderr,
++		"Error:B-VID Mode:%d and DUMP INFO:%d options are mutually exclusive!\n",
++		mode, key_info_map_verify);
++	return -1;
++}
++
++static int pbbi_pbbb_ifindex_arg(const char *arg)
++{
++        fprintf(stderr,
++                "Error: argument of \"core-bridge\" must be an existing PBB-B (Core) interface name, not \"%s\"\n",
++                arg);
++        return -1;
++}
++
++static int pbbi_c_vid_arg(const char *arg)
++{
++	fprintf(stderr,
++		"Error: argument of \"c-vid\" must be a positive integer [0-4294967295], not \"%s\"\n",
++		arg);
++	return -1;
++}
++
++static int pbbi_s_vid_arg(const char *arg)
++{
++	fprintf(stderr,
++		"Error: argument of \"s-vid\" must be a positive integer [0-4294967295], not \"%s\"\n",
++		arg);
++	return -1;
++}
++
++static int pbbi_vid_action(const char *arg)
++{
++	fprintf(stderr,
++		"Error: argument of vid action must be [keep | strip], not \"%s\"\n",
++		arg);
++	return -1;
++}
++
++static int pbbi_isid_type(const char *arg)
++{
++	fprintf(stderr,
++		"Error: argument of isid type must be [shared | exclusive], not \"%s\"\n",
++		arg);
++	return -1;
++}
++
++static int pbbb_parse_opt(struct link_util *lu, int argc, char **argv,
++                           struct nlmsghdr *n)
++{
++	bool add_op = (n->nlmsg_type == RTM_NEWLINK &&
++                       (n->nlmsg_flags & NLM_F_CREATE));
++	__u32 i_sid_info_range_begin = 0, i_sid_info_range_end = 0;
++	int  b_vid_info_range_begin = -1, b_vid_info_range_end = -1;
++	__u8 mode = PBB_B_MODE_MAX, key_info_map_verify = 0;
++
++	fprintf(stderr, "Invoking %s with type:0x%x flags:0x%x *argv:%s\n", __FUNCTION__, n->nlmsg_type, n->nlmsg_flags, *argv);
++
++	if (add_op) {
++		return 0;
++	}
++
++	while (argc > 0) {
++		if (matches(*argv, "link") == 0) {
++			int ifindex;
++			NEXT_ARG();
++
++                        ifindex = ll_name_to_index(*argv);
++                        if (!ifindex) {
++                                return pbbb_nodev(*argv);
++			}
++                        addattr32(n, sizeof(struct iplink_req), IFLA_PBB_B_LINK, ifindex);
++		} else if (strcmp(*argv, "b-vid-mode") == 0) {
++			NEXT_ARG();
++
++			if (strcmp(*argv, "dot1q") == 0)
++				mode = PBB_B_MODE_DOT1Q;
++			else if (strcmp(*argv, "dot1ad") == 0)
++				mode = PBB_B_MODE_DOT1AD;
++			else if (strcmp(*argv, "none") == 0)
++				mode = PBB_B_MODE_MAX;
++			else {
++				pbbb_explain(lu);
++				return -1;
++			}
++
++			addattr_l(n, 1024, IFLA_PBB_B_B_VID_MODE, &mode, sizeof(__u8));
++		} else if (strcmp(*argv, "key-info-map-verify") == 0) {
++			key_info_map_verify = 1;
++
++			addattr_l(n, 1024, IFLA_PBB_B_KEY_INFO_MAP_VERIFY, &key_info_map_verify, sizeof(__u8));
++		} else if (matches(*argv, "i-sid") == 0) {
++			char *p = NULL;
++
++			NEXT_ARG();
++
++			p = strchr(*argv, '-');
++			if (p) {
++				*p = '\0';
++				if (get_u32(&i_sid_info_range_begin, *argv, 0)) {
++				        return pbb_i_sid_arg(*argv);
++				}
++
++				p++;
++				if (get_u32(&i_sid_info_range_end, p, 0)) {
++				        return pbb_i_sid_arg(p);
++				}
++			} else {
++				if (get_u32(&i_sid_info_range_begin, *argv, 0)) {
++			        	return pbb_i_sid_arg(*argv);
++				}
++				i_sid_info_range_end = i_sid_info_range_begin;
++			}
++		} else if (strcmp(*argv, "b-vid") == 0) {
++			char *p = NULL;
++
++			//TODO: For now keeping size as 32-bit, change in future to 16-bit if required
++			NEXT_ARG();
++
++			p = strchr(*argv, '-');
++			if (p) {
++				*p = '\0';
++				if (get_s32(&b_vid_info_range_begin, *argv, 0)) {
++				        return pbbb_b_vid_arg(*argv);
++				}
++
++				p++;
++				if (get_s32(&b_vid_info_range_end, p, 0)) {
++				        return pbbb_b_vid_arg(p);
++				}
++			} else {
++				if (get_s32(&b_vid_info_range_begin, *argv, 0)) {
++			        	return pbbb_b_vid_arg(*argv);
++				}
++				b_vid_info_range_end = b_vid_info_range_begin;
++			}
++		} else if (matches(*argv, "help") == 0) {
++			pbbb_explain(lu);
++			return -1;
++		} else {
++			pfx_err(lu, "unknown option \"%s\"?", *argv);
++			pbbb_explain(lu);
++			return -1;
++		}
++		argc--, argv++;
++	}
++
++	/* Sanity checks for i_sid tag value/s & b_vid tag value/s -
++	 * Only allowed values -
++	 * i_sid -> b_vid ie. 1:1
++	 * i_sid_range(BEGIN,END>BEGIN) -> b_vid ie. N:1
++	 * i_sid_range(BEGIN,END>BEGIN) -> b_vid_range(BEGIN,END>BEGIN) ie. N:N.
++	 * If i_sid or b_vid value/s defined then either PBB_B Mode or Key-Info-Map-Verify arguments mandatory.
++	 */
++	if (i_sid_info_range_begin || (b_vid_info_range_begin >= 0)) {
++		if (!i_sid_info_range_begin || (b_vid_info_range_begin == -1)) {
++			pbbb_explain(lu);
++		} else if ((i_sid_info_range_begin > i_sid_info_range_end) ||
++			   (b_vid_info_range_begin > b_vid_info_range_end)) {
++				pbbb_explain(lu);
++				return -1;
++		} else if ((i_sid_info_range_end != i_sid_info_range_begin) &&
++			   (b_vid_info_range_begin != b_vid_info_range_end) &&
++			   ((i_sid_info_range_end-i_sid_info_range_begin) != (b_vid_info_range_end - b_vid_info_range_begin))) {
++				pbbb_explain(lu);
++				return -1;
++		} else if ((b_vid_info_range_begin != b_vid_info_range_end) &&
++			   ((i_sid_info_range_end - i_sid_info_range_begin) != (b_vid_info_range_end - b_vid_info_range_begin))) {
++				pbbb_explain(lu);
++				return -1;
++		}
++
++		if ((mode == PBB_B_MODE_MAX) && (key_info_map_verify == 0)) {
++			return pbbb_b_mode_none_arg();
++		}
++
++		if ((mode != PBB_B_MODE_MAX) && (key_info_map_verify == 1))  {
++			return pbbb_b_mode_info_map_verify_arg(mode, key_info_map_verify);
++		}
++
++		addattr32(n, 1024, IFLA_PBB_B_ISID_INFO_RANGE_BEGIN, i_sid_info_range_begin);
++		addattr32(n, 1024, IFLA_PBB_B_ISID_INFO_RANGE_END, i_sid_info_range_end);
++		addattr32(n, 1024, IFLA_PBB_B_VID_INFO_RANGE_BEGIN, b_vid_info_range_begin);
++		addattr32(n, 1024, IFLA_PBB_B_VID_INFO_RANGE_END, b_vid_info_range_end);
++	}
++
++	return 0;
++}
++
++static int pbbi_parse_opt(struct link_util *lu, int argc, char **argv,
++                           struct nlmsghdr *n)
++{
++	bool add_op = (n->nlmsg_type == RTM_NEWLINK &&
++                       (n->nlmsg_flags & NLM_F_CREATE));
++	int c_vid_info_range_begin = -1, c_vid_info_range_end = -1;
++	int s_vid_info_range_begin = -1, s_vid_info_range_end = -1;
++	__u32 i_sid_info_range_begin = 0, i_sid_info_range_end = 0;
++	__u8 c_vid_info_action = PBB_I_VID_INFO_ACTION_MAX, s_vid_info_action = PBB_I_VID_INFO_ACTION_MAX, i_sid_type = PBB_I_ISID_TYPE_MAX, key_info_map_verify = 0;
++
++	fprintf(stderr, "Invoking %s with type:0x%x flags:0x%x\n", __FUNCTION__, n->nlmsg_type, n->nlmsg_flags);
++
++	if (add_op) {
++		return 0;
++	}
++
++	while (argc > 0) {
++		if (matches(*argv, "core-bridge") == 0) {
++			__u32 pbb_b_ifindex = 0;
++			NEXT_ARG();
++
++			pbb_b_ifindex = ll_name_to_index(*argv);
++			if (pbb_b_ifindex == 0) {
++				return pbbi_pbbb_ifindex_arg(*argv);
++			}	
++			addattr32(n, 1024, IFLA_PBB_I_CORE_BRIDGE_INFO, pbb_b_ifindex);
++		} else if (strcmp(*argv, "key-info-map-verify") == 0) {
++			key_info_map_verify = 1;
++
++			addattr_l(n, 1024, IFLA_PBB_I_KEY_INFO_MAP_VERIFY, &key_info_map_verify, sizeof(__u8));
++		} else if (matches(*argv, "c-vid") == 0) {
++			char *p = NULL;
++
++			//TODO: For now keeping size as 32-bit, change in future to 16-bit if required
++			NEXT_ARG();
++
++			p = strchr(*argv, '-');
++			if (p) {
++				*p = '\0';
++				if (get_s32(&c_vid_info_range_begin, *argv, 0)) {
++				        return pbbi_c_vid_arg(*argv);
++				}
++
++				p++;
++				if (get_s32(&c_vid_info_range_end, p, 0)) {
++				        return pbbi_c_vid_arg(p);
++				}
++			} else {
++				if (get_s32(&c_vid_info_range_begin, *argv, 0)) {
++			        	return pbbi_c_vid_arg(*argv);
++				}
++				c_vid_info_range_end = c_vid_info_range_begin;
++			}
++
++			NEXT_ARG();
++
++			if (strcmp(*argv, "c-vid-mode-keep") == 0) {
++				c_vid_info_action = PBB_I_VID_INFO_ACTION_KEEP;
++			} else if (strcmp(*argv, "c-vid-mode-strip") == 0) {
++				c_vid_info_action = PBB_I_VID_INFO_ACTION_STRIP;
++			} else {
++				return pbbi_vid_action(*argv);
++			}
++
++			addattr_l(n, 1024, IFLA_PBB_I_CVID_INFO_ACTION, &c_vid_info_action, sizeof(__u8));
++		} else if (matches(*argv, "s-vid") == 0) {
++			char *p = NULL;
++
++			//TODO: For now keeping size as 32-bit, change in future to 16-bit if required
++			NEXT_ARG();
++
++			p = strchr(*argv, '-');
++			if (p) {
++				*p = '\0';
++				if (get_s32(&s_vid_info_range_begin, *argv, 0)) {
++				        return pbbi_s_vid_arg(*argv);
++				}
++
++				p++;
++				if (get_s32(&s_vid_info_range_end, p, 0)) {
++				        return pbbi_s_vid_arg(p);
++				}
++			} else {
++				if (get_s32(&s_vid_info_range_begin, *argv, 0)) {
++			        	return pbbi_s_vid_arg(*argv);
++				}
++				s_vid_info_range_end = s_vid_info_range_begin;
++			}
++
++			NEXT_ARG();
++
++			if (strcmp(*argv, "s-vid-mode-keep") == 0) {
++				s_vid_info_action = PBB_I_VID_INFO_ACTION_KEEP;
++			} else if (strcmp(*argv, "s-vid-mode-strip") == 0) {
++				s_vid_info_action = PBB_I_VID_INFO_ACTION_STRIP;
++			} else {
++				return pbbi_vid_action(*argv);
++			}
++
++			addattr_l(n, 1024, IFLA_PBB_I_SVID_INFO_ACTION, &s_vid_info_action, sizeof(__u8));
++		} else if (matches(*argv, "i-sid") == 0) {
++			char *p = NULL;
++
++			NEXT_ARG();
++
++			p = strchr(*argv, '-');
++			if (p) {
++				*p = '\0';
++				if (get_u32(&i_sid_info_range_begin, *argv, 0)) {
++				        return pbb_i_sid_arg(*argv);
++				}
++
++				p++;
++				if (get_u32(&i_sid_info_range_end, p, 0)) {
++				        return pbb_i_sid_arg(p);
++				}
++			} else {
++				if (get_u32(&i_sid_info_range_begin, *argv, 0)) {
++			        	return pbb_i_sid_arg(*argv);
++				}
++				i_sid_info_range_end = i_sid_info_range_begin;
++			}
++
++			NEXT_ARG();
++			if (strcmp(*argv, "i-sid-type-shared") == 0) {
++				i_sid_type = PBB_I_ISID_TYPE_SHARED;
++			} else if (strcmp(*argv, "i-sid-type-excl") == 0) {
++				i_sid_type = PBB_I_ISID_TYPE_EXCL;
++			} else {
++				return pbbi_isid_type(*argv);
++			}
++			addattr_l(n, 1024, IFLA_PBB_I_ISID_TYPE, &i_sid_type, sizeof(__u8));
++
++
++		} else if (matches(*argv, "help") == 0) {
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		} else {
++			pfx_err(lu, "unknown option \"%s\"?", *argv);
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		}
++		argc--, argv++;
++	}
++
++	/* Sanity checks for c/s s_vid tag value/s and actions to i_sid tag value/s and types -
++	 * Only allowed values -
++	 * c_vid(1) -> s_vid(1) -> i_sid(1) ie. 1:1:1
++	 * c_vid(N) -> s_vid(1) -> i_sid(N) ie. N:1:N (i-sid-type excl mode)
++	 * c_vid(N) -> s_vid(1) -> i_sid(1) ie. N:1:1 (i-sid-type shared mode)
++	 * c_vid(1) -> s_vid(N) -> i_sid(N) ie. 1:N:N (i-sid-type excl mode)
++	 * c_vid(1) -> s_vid(N) -> i_sid(1) ie. 1:N:1 (i-sid-type shared mode)
++	 * c_vid(N) -> s_vid(N) -> i_sid(N) ie. N:N:N (i-sid-type excl mode)
++	 * i-sid-type-shared mode to be supported by c/s keep action only
++	 * In shared mode only 1 SID in range allowed
++	 * In excl mode only 1 SID in range allowed only for 1:1:1 case
++	 */
++	if ((c_vid_info_range_begin >= 0) || (s_vid_info_range_begin >= 0) || i_sid_info_range_begin) {
++		if ((c_vid_info_range_begin == -1) || (s_vid_info_range_begin == -1) || !i_sid_info_range_begin) {
++			fprintf(stderr, "c_vid_info_range_begin:%d s_vid_info_range_begin:%d i_sid_info_range_begin:%u\n", c_vid_info_range_begin, s_vid_info_range_begin, i_sid_info_range_begin);
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		}
++
++		int c_vid_info_range_len = c_vid_info_range_end - c_vid_info_range_begin;
++		int s_vid_info_range_len = s_vid_info_range_end - s_vid_info_range_begin;
++		int i_sid_info_range_len = i_sid_info_range_end - i_sid_info_range_begin;
++
++		if ((c_vid_info_range_len < 0) || (s_vid_info_range_len < 0) || (i_sid_info_range_len < 0)) {
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		}
++	
++		if (c_vid_info_range_len != s_vid_info_range_len) {
++			if ((c_vid_info_range_len > 0) && (s_vid_info_range_len > 0)) {
++				pbbi_explain(lu, __LINE__);
++				return -1;
++			} else if ((c_vid_info_range_len > 0) &&
++				   (i_sid_info_range_len > 0) &&
++				   (c_vid_info_range_len != i_sid_info_range_len)) {
++				pbbi_explain(lu, __LINE__);
++				return -1;
++			} else if ((s_vid_info_range_len > 0) &&
++				   (i_sid_info_range_len > 0) &&
++				   (s_vid_info_range_len != i_sid_info_range_len)) {
++				pbbi_explain(lu, __LINE__);
++				return -1;
++			}
++		} else if ((c_vid_info_range_len > 0) &&
++			   (i_sid_info_range_len > 0) &&
++			   (c_vid_info_range_len != i_sid_info_range_len)) {
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		} else if ((i_sid_info_range_len > 0) &&
++			   (c_vid_info_range_len > 0) &&
++			   (i_sid_info_range_len != c_vid_info_range_len)) {
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		} else if ((c_vid_info_range_len == 0) &&
++			   (i_sid_info_range_len > 0)) {
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		}
++
++		if ((i_sid_type == PBB_I_ISID_TYPE_SHARED) &&
++			    (i_sid_info_range_len > 0)) {
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		} else if ((i_sid_type == PBB_I_ISID_TYPE_SHARED) &&
++			   ((c_vid_info_action != PBB_I_VID_INFO_ACTION_KEEP) || (s_vid_info_action != PBB_I_VID_INFO_ACTION_KEEP))) {
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		} else if ((i_sid_type == PBB_I_ISID_TYPE_EXCL) &&
++			   (i_sid_info_range_len == 0) &&
++			   ((c_vid_info_range_len > 0) || (s_vid_info_range_len > 0))) {
++			fprintf(stderr, "Incorrect range for ISID_TYPE_EXCL: i_sid_info_range_len:%d c_vid_info_range_len:%d s_vid_info_range_len:%d\n",
++				i_sid_info_range_len, c_vid_info_range_len, s_vid_info_range_len);
++
++			pbbi_explain(lu, __LINE__);
++			return -1;
++		}
++
++		addattr32(n, 1024, IFLA_PBB_I_CVID_INFO_RANGE_BEGIN, c_vid_info_range_begin);
++		addattr32(n, 1024, IFLA_PBB_I_CVID_INFO_RANGE_END, c_vid_info_range_end);
++		addattr32(n, 1024, IFLA_PBB_I_SVID_INFO_RANGE_BEGIN, s_vid_info_range_begin);
++		addattr32(n, 1024, IFLA_PBB_I_SVID_INFO_RANGE_END, s_vid_info_range_end);
++		addattr32(n, 1024, IFLA_PBB_I_ISID_INFO_RANGE_BEGIN, i_sid_info_range_begin);
++		addattr32(n, 1024, IFLA_PBB_I_ISID_INFO_RANGE_END, i_sid_info_range_end);
++	}
++
++	return 0;
++}
++
++
++
++static void pbbb_print_help(struct link_util *lu, int argc, char **argv,
++	FILE *f)
++{
++	print_pbbb_explain(lu, f);
++}
++
++static void pbbi_print_help(struct link_util *lu, int argc, char **argv,
++	FILE *f)
++{
++	print_pbbi_explain(lu, f, __LINE__);
++}
++
++struct link_util pbbb_link_util = {
++	.id = "pbbb",
++	.parse_opt = pbbb_parse_opt,
++	.print_help = pbbb_print_help,
++};
++
++struct link_util pbbi_link_util = {
++	.id = "pbbi",
++	.parse_opt = pbbi_parse_opt,
++	.print_help = pbbi_print_help,
++};
