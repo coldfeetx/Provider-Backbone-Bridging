@@ -54,7 +54,7 @@ The pbbi component has been implemented as a virtual driver supporting aforement
 
 Eg: ./ip/ip link set pbbi_0 type pbbi core-bridge pbbb_0
 
-The pbbb component has been implemented as a virtual driver supporting aforementioned B-component operations (enlisted in previous section) that requires an ethernet device to be enslaved. The other side of this device should be part of the PBBN Core network (BEB-BCB on Ingress and BCB-BEB on Egress).
+The pbbb component has been implemented as a virtual driver supporting aforementioned B-component operations (enlisted in previous section) that requires an ethernet device to be enslaved. The other side of this device should be part of the PBBN Core network (BEB->BCB on Ingress and BCB->BEB on Egress).
 
 Eg: ./ip/ip link set pbbb_1 type pbbb link veth5 b-vid-mode dot1ad i-sid 20000 b-vid 1000
 
