@@ -38,6 +38,7 @@ The B-Component (pbbb) maps I-SIDs to backbone VIDs (B-VIDs) and adds a PBB head
 
 
 PBB Implementation Summary
+
 The pbbi component has been implemented as a virtual driver supporting aforementioned I-component operations (enlisted in previous section) that is to be enslaved by a Linux Kernel Bridge Device (to utilize the available facilities of Traditional Bridging provided by the Linux Kernel Bridge). The other side of the bridge device should be an ethernet device that is connected to an Access Network (CE->PEB->PB on Ingress and PB->PEB->CE on Egress). The bridge device must be in 802.1q mode with vlan_filtering set for C-tagged Service mode, in 802.1ad mode with vlan_filtering set for S and S/C-tagged Service mode. No vlan settings required for Port-based Service.
 Eg: ./ip/ip link set pbbi_0 type pbbi core-bridge pbbb_0
 The pbbb component has been implemented as a virtual driver supporting aforementioned B-component operations (enlisted in previous section) that requires an ethernet device to be enslaved. The other side of this device should be part of the PBBN Core network (BEB-BCB on Ingress and BCB-BEB on Egress).
