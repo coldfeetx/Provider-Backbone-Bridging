@@ -22,6 +22,7 @@ For any queries/complaints on this project, please reach out to me at soumikbane
 LONG LIVE OPEN SOURCE!
 
 
+
 **PBB Architecture Summary**
 
 Backbone edge bridges (BEBs) can contain either an I-Component or a B-Component. 
@@ -44,6 +45,7 @@ The B-Component (pbbb) maps I-SIDs to backbone VIDs (B-VIDs) and adds a PBB head
   a. b-vid-mode dot1ad i-sid <isid> b-vid <bvid>
   
   b. b-vid-mode dot1q i-sid <isid> b-vid <bvid>
+
 
 
 **PBB Implementation Summary**
