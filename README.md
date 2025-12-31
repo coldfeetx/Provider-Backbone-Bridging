@@ -1,4 +1,4 @@
-Provider Backbone Bridging (PBB) Project High-Level Summary
+**Provider Backbone Bridging (PBB) Project High-Level Summary**
 
 This project is an honest attempt to understand Provider Backbone Bridging (802.1ah) protocol from the very barebones, based on the open documentation available on the same.
 As of the present, this project is just a starting point for the author himself to delve into the design and implementation of the very basic principles of this standard in its simplest form, before taking it further (like implementing Control Plane Support to PBB, for example, thus turning it into something like Shortest Path Bridging aka SPB).
@@ -22,7 +22,7 @@ For any queries/complaints on this project, please reach out to me at soumikbane
 LONG LIVE OPEN SOURCE!
 
 
-PBB Architecture Summary
+**PBB Architecture Summary**
 
 Backbone edge bridges (BEBs) can contain either an I-Component or a B-Component. 
 The I-Component (pbbi) maps Customer VLAN identifiers (C-VIDs) and/or Service VLAN identifiers (S-VIDs) to service instance identifiers (I-SIDs) and adds a provider backbone bridge (PBB) header without a backbone VLAN tag (B-Tag) in 4 different combinations -
@@ -37,10 +37,13 @@ The B-Component (pbbb) maps I-SIDs to backbone VIDs (B-VIDs) and adds a PBB head
   b. b-vid-mode dot1q i-sid <isid> b-vid <bvid>
 
 
-PBB Implementation Summary
+**PBB Implementation Summary**
 
 The pbbi component has been implemented as a virtual driver supporting aforementioned I-component operations (enlisted in previous section) that is to be enslaved by a Linux Kernel Bridge Device (to utilize the available facilities of Traditional Bridging provided by the Linux Kernel Bridge). The other side of the bridge device should be an ethernet device that is connected to an Access Network (CE->PEB->PB on Ingress and PB->PEB->CE on Egress). The bridge device must be in 802.1q mode with vlan_filtering set for C-tagged Service mode, in 802.1ad mode with vlan_filtering set for S and S/C-tagged Service mode. No vlan settings required for Port-based Service.
+
 Eg: ./ip/ip link set pbbi_0 type pbbi core-bridge pbbb_0
+
 The pbbb component has been implemented as a virtual driver supporting aforementioned B-component operations (enlisted in previous section) that requires an ethernet device to be enslaved. The other side of this device should be part of the PBBN Core network (BEB-BCB on Ingress and BCB-BEB on Egress).
+
 Eg: ./ip/ip link set pbbb_1 type pbbb link veth5 b-vid-mode dot1ad i-sid 20000 b-vid 1000
 
