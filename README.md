@@ -26,14 +26,23 @@ LONG LIVE OPEN SOURCE!
 
 Backbone edge bridges (BEBs) can contain either an I-Component or a B-Component. 
 The I-Component (pbbi) maps Customer VLAN identifiers (C-VIDs) and/or Service VLAN identifiers (S-VIDs) to service instance identifiers (I-SIDs) and adds a provider backbone bridge (PBB) header without a backbone VLAN tag (B-Tag) in 4 different combinations -
+
   a. S-Tagged Service (c-vid 0 c-vid-mode-strip s-vid <svid> s-vid-mode-keep i-sid <isid>)
+
   b. C-Tagged Service (c-vid <cvid> c-vid-mode-keep s-vid 0 c-vid-mode-strip i-sid <isid>)
+  
   c. S/C Tagged Service (c-vid <cvid> c-vid-mode-keep s-vid <svid> s-vid-mode-keep i-sid <isid>)
+  
   d. Port-based Service (c-vid 0 c-vid-mode-strip s-vid 0 s-vid-mode-strip i-sid <isid>)
+  
   e. This translation ruleset is currently symmetric ie. applies the same way on egress as on ingress.
-  e. If the customer and/or service tags need to be retained across the Provider Backbone Network (PBBN), use c/s-vid-mode-keep else use c/s-vid-mode-strip. Currently if a range of C-vid and/or S-vid tags has to be mapped to a single I-sid, then I-sid i-sid-type-shared has to be specified which can only support c/s-vid-mode-keep option.
+  
+  f. If the customer and/or service tags need to be retained across the Provider Backbone Network (PBBN), use c/s-vid-mode-keep else use c/s-vid-mode-strip. Currently if a range of C-vid and/or S-vid tags has to be mapped to a single I-sid, then I-sid i-sid-type-shared has to be specified which can only support c/s-vid-mode-keep option.
+
 The B-Component (pbbb) maps I-SIDs to backbone VIDs (B-VIDs) and adds a PBB header with a B-Tag. Below 2 options are supported in that regard -
+
   a. b-vid-mode dot1ad i-sid <isid> b-vid <bvid>
+  
   b. b-vid-mode dot1q i-sid <isid> b-vid <bvid>
 
 
