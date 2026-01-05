@@ -13,6 +13,8 @@
 #include <uapi/linux/if_pbb.h>
 #include <linux/if_pbb.h>
 
+extern char pbb_l2vpn_bum_flood_mac_prefix[ETH_ALEN/2];
+
 /***************************************** Generic PBB-B Routines ***********************************************/
 static int pbb_b_sync_address(struct net_device *pbb_b,
 			      const unsigned char *addr)
@@ -334,7 +336,7 @@ static netdev_tx_t pbb_b_xmit(struct sk_buff *skb, struct net_device *pbb_b)
 	}
 	u32 bvlan_tci = ah_rhnode_core->rhnode_info.b_vid_hash_info & PBB_L2VPN_RHNODE_TYPE_B_VID_INFO_MASK;
 
-        if (!is_multicast_ether_addr(dot1ah_outer_eth_hdr->bb_dmac) && !is_broadcast_ether_addr(dot1ah_outer_eth_hdr->bb_dmac)) {
+	if (memcmp(dot1ah_outer_eth_hdr->bb_dmac, pbb_l2vpn_bum_flood_mac_prefix, ETH_ALEN/2)) {
                 // Detect and extract the destination mac and do a lookup based on [core,bvid,dmac] below
                 struct pbb_l2vpn_fdb_rhnode_key fdb_rhnode_core_ulay_key = {0};
                 fdb_rhnode_core_ulay_key.type = PBB_MAC_TYPE_CORE_ULAY;
@@ -713,10 +715,8 @@ static rx_handler_result_t pbb_b_handle_frame_from_core(struct sk_buff **pskb)
 	pbb_dump_skb(skb, RX);
 #endif // PBB_DEBUG
 
-	if (!is_multicast_ether_addr(dot1ah_outer_eth_hdr_in->bb_dmac) &&
-	    !is_multicast_ether_addr(dot1ah_outer_eth_hdr_in->bb_dmac) &&
-	    memcmp(dot1ah_outer_eth_hdr_in->bb_dmac, pbb_b->dev_addr, ETH_ALEN)) {
-
+	if (memcmp(dot1ah_outer_eth_hdr_in->bb_dmac, pbb_l2vpn_bum_flood_mac_prefix, ETH_ALEN/2) &&
+            memcmp(dot1ah_outer_eth_hdr_in->bb_dmac, pbb_b->dev_addr, ETH_ALEN)) {
 	        len = skb->len + ETH_HLEN;
 		ret = NET_RX_DROP;
 		handle_res = RX_HANDLER_PASS;

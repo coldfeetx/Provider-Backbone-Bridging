@@ -14,6 +14,8 @@
 #include <linux/if_pbb.h>
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 
+char pbb_l2vpn_bum_flood_mac_prefix[ETH_ALEN/2] = {0x01, 0x1e, 0x83};
+
 /***************************************** Generic PBB Routines ***********************************************/
 /***************************************** PBB Packet Dump routines *******************************************/
 static void pbb_dump(const struct sk_buff *skb, pbb_dump_type dump_type, skb_dump_direction dir)
@@ -475,7 +477,12 @@ void pbb_l2vpn_fdb_rht_deinit(struct rhashtable *tbl)
 
 void pbb_l2vpn_fdb_get_flood_mac_for_sid(unsigned char flood_mac[], u32 sid)
 {
-	memset((void *)flood_mac, 0xFF, ETH_ALEN);
+	sid = htonl(sid);
+	void *isid = (char *)&sid + 1; //Decay sid value for dereference and PBBN Flood Mac construction below
+
+	memcpy((void *)flood_mac, pbb_l2vpn_bum_flood_mac_prefix, ETH_ALEN/2);
+	memcpy((void *)flood_mac + (ETH_ALEN/2), isid, ETH_ALEN/2);
+
 }
 
 /* PBB Generic L2VPN Data Structure Manipulation APIs */
