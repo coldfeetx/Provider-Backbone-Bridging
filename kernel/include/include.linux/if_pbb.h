@@ -16,6 +16,7 @@
 #ifndef _LINUX_IF_PBB_H
 #define _LINUX_IF_PBB_H
 
+#include <linux/bitops.h>
 #include <linux/skbuff.h>
 #include <uapi/linux/if_arp.h>
 #include <uapi/linux/if_vlan.h>
@@ -45,6 +46,7 @@
 #include <linux/if_arp.h>
 #include <linux/if_vlan.h>
 #include <linux/if_link.h>
+#include <net/mrp.h>
 
 #define PBB_DRV_VERSION	"1.0"
 #define PBB_DRV_NAME	"pbb"
@@ -148,6 +150,31 @@
 /* PBB L2VPN AH Manipulation Macros */
 #define PBB_L2VPN_FDB_RHT_LEN_MAX					67112960
 
+//OSIRP (Open Stateless I-Service Registration Protocol) related data structures
+#define PBB_L2VPN_OSIRP_TIMEOUT 	10000    //milliseconds
+#define PBB_L2VPN_OSIRP_FRAME_LEN	26
+#define ETH_P_OSIRP 0x8888
+
+enum pbb_l2vpn_osirp_opc {
+        PBB_L2VPN_OSIRP_OPC_INVALID,
+        PBB_L2VPN_OSIRP_OPC_JOIN,
+        PBB_L2VPN_OSIRP_OPC_LEAVE,
+        PBB_L2VPN_OSIRP_OPC_LEAVE_ALL,
+        __PBB_L2VPN_OSIRP_OPC_MAX
+};
+#define PBB_L2VPN_OSIRP_OPC_MAX   (__PBB_L2VPN_OSIRP_OPC_MAX - 1)
+
+typedef struct __attribute__((__packed__)) osirphdr_s {
+        unsigned char   osirp_dmac[ETH_ALEN];       /* destination eth addr */
+        unsigned char   osirp_smac[ETH_ALEN];       /* source ether addr    */
+        u16             bvlan_proto;		    /* PBB_B Port Bvlan Mode */
+        u16             bvlan_tci;
+        u16             osirp_proto;                /* Protocol type ETH_P_OSIRP */
+	u32		osirp_isid;
+	u32		osirp_opc:8;		    /* pbb_l2vpn_osirp_opc */ 
+	u32		reserved:24;
+} osirphdr;
+
 /* PBB L2VPN AH Manipulation Data Structures */
 union pbb_l2vpn_ah_rhnode_info {
 	u32	c_qinq_edge_hash_info;
@@ -223,6 +250,8 @@ struct pbb_b_priv {
 	netdev_features_t		set_features;
 	struct rhashtable               pbb_l2vpn_ah_rht;
 	struct rhashtable               pbb_l2vpn_fdb_rht;
+	struct timer_list		pbb_l2vpn_osirp_timer;
+	u32				*bvlan_tci_refcntmap;
 };
 
 struct pbb_i_priv {
@@ -321,6 +350,7 @@ void 				pbb_l2vpn_ah_rht_deinit(struct rhashtable *tbl);
 struct pbb_l2vpn_ah_rhnode 	*pbb_l2vpn_ah_rhnode_alloc(void);
 int 				pbb_l2vpn_ah_rhnode_insert(struct rhashtable *tbl, struct rhash_head *rhnode_hash);
 struct pbb_l2vpn_ah_rhnode 	*pbb_l2vpn_ah_rhnode_lookup(struct rhashtable *tbl, u32 *rhnode_key);
+int 				pbb_l2vpn_ah_rhnode_remove(struct rhashtable *tbl, struct rhash_head *rhnode_hash);
 void 				pbb_l2vpn_ah_rhnode_free(struct pbb_l2vpn_ah_rhnode *ah_rhnode);
 
 bool 				pbb_l2vpn_ah_rhnode_is_type_c_qinq_key(u32 rhnode_key);
@@ -359,5 +389,10 @@ void 				pbb_get_stats64(struct net_device *pbb, struct rtnl_link_stats64 *stats
 
 void 				pbb_b_netdev_notifier_register(void);
 void 				pbb_b_netdev_notifier_unregister(void);
+
+struct sk_buff *pbb_l2vpn_alloc_osirp(struct net_device *pbb_b, u32 i_sid_or_b_vid, enum pbb_l2vpn_osirp_opc pbb_l2vpn_osirp_opcode);
+int pbb_l2vpn_osirp_send_packet(struct net_device *pbb_b, u32 i_sid_or_b_vid, enum pbb_l2vpn_osirp_opc pbb_l2vpn_osirp_opcode);
+int pbb_l2vpn_osirp_send_packet_walk(struct net_device *pbb_b, bool join_or_leave_all);
+void pbb_l2vpn_osirp_timer_cb(struct timer_list *osirp_timer);
 
 #endif /* _LINUX_IF_PBB_H */

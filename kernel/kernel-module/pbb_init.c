@@ -14,7 +14,8 @@
 #include <linux/if_pbb.h>
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 
-char pbb_l2vpn_bum_flood_mac_prefix[ETH_ALEN/2] = {0x01, 0x1e, 0x83};
+char pbb_l2vpn_bum_flood_mac_prefix[ETH_ALEN/2] = {0x01, 0xcd, 0xef};
+char pbb_l2vpn_osirp_proto_dmac[ETH_ALEN] = {0x01, 0xde, 0xff, 0x01, 0x02, 0x03};
 
 /***************************************** Generic PBB Routines ***********************************************/
 /***************************************** PBB Packet Dump routines *******************************************/
@@ -373,6 +374,15 @@ struct pbb_l2vpn_ah_rhnode *pbb_l2vpn_ah_rhnode_lookup(struct rhashtable *tbl, u
 	}
 
         return (struct pbb_l2vpn_ah_rhnode *)rhashtable_lookup_fast(tbl, rhnode_key, pbb_l2vpn_ah_rht_params);
+}
+
+int pbb_l2vpn_ah_rhnode_remove(struct rhashtable *tbl, struct rhash_head *rhnode_hash)
+{
+	if (!rhnode_hash) {
+		return -EINVAL;
+	}
+
+        return rhashtable_remove_fast(tbl, rhnode_hash, pbb_l2vpn_ah_rht_params);
 }
 
 void pbb_l2vpn_ah_rht_deinit(struct rhashtable *tbl)

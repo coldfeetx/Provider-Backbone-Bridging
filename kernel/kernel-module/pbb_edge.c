@@ -799,7 +799,7 @@ static int pbb_i_changelink(struct net_device *pbb_i,
         struct pbb_i_priv *i_priv = NULL;
         struct pbb_b_priv *b_priv = NULL;
 	bool pbbi_core_bridge_process = false, cvid_svid_isid_update = false;
-	u8 cvid_info_action = PBB_I_VID_INFO_ACTION_MAX, svid_info_action = PBB_I_VID_INFO_ACTION_MAX, sid_type = PBB_I_ISID_TYPE_MAX, key_info_map_verify = 0;
+	u8 cvid_info_action = PBB_I_VID_INFO_ACTION_MAX, svid_info_action = PBB_I_VID_INFO_ACTION_MAX, sid_type = PBB_I_ISID_TYPE_MAX, key_info_map_verify = 0, key_info_map_del = 0;
 	int err = 0;
 
 	pbb_info(pbb_i, "%s: Processing PBB_I Changelink", __FUNCTION__);
@@ -904,8 +904,17 @@ static int pbb_i_changelink(struct net_device *pbb_i,
 		cvid_svid_isid_update = true;
 	}
 
+	if (data && data[IFLA_PBB_I_KEY_INFO_MAP_DEL]) {
+		pbb_info(pbb_i, "%s: Processing PBB_B Changelink PBB_B Key Info Map Verify Notification",
+			 __FUNCTION__);
+
+		key_info_map_del = nla_get_u8(data[IFLA_PBB_I_KEY_INFO_MAP_DEL]);
+
+		cvid_svid_isid_update = true;
+	}
+
 	if (data && data[IFLA_PBB_I_KEY_INFO_MAP_VERIFY]) {
-		pbb_info(pbb_i, "%s: Processing PBB_B Changelink PBB_I Key Info Map Verify Notification",
+		pbb_info(pbb_i, "%s: Processing PBB_B Changelink PBB_B Key Info Map Verify Notification",
 			 __FUNCTION__);
 
 		key_info_map_verify = nla_get_u8(data[IFLA_PBB_I_KEY_INFO_MAP_VERIFY]);
@@ -975,7 +984,7 @@ static int pbb_i_changelink(struct net_device *pbb_i,
 	do {
 		err = 0;
 		/* Create and add/Verify [c,s -> c_action,s_action,isid] Mapping */
-		if (key_info_map_verify == 0) {
+		if ((key_info_map_del == 0) && (key_info_map_verify == 0)) {
 			ah_rhnode_core1 = pbb_l2vpn_ah_rhnode_alloc();
 			if (!ah_rhnode_core1) {
 				pbb_err(pbb_i, "%s: Failed to allocate PBB L2VPN AH RHNode!", __FUNCTION__);
@@ -1011,7 +1020,7 @@ static int pbb_i_changelink(struct net_device *pbb_i,
 		}
 
 		err = -EINVAL;
-		if (key_info_map_verify == 0) {
+		if ((key_info_map_del == 0) && (key_info_map_verify == 0)) {
 			err = pbb_l2vpn_ah_rhnode_insert(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core1->rhnode_hash);
 		} else {
 			ah_rhnode_core1 = pbb_l2vpn_ah_rhnode_lookup(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core1->rhnode_key);
@@ -1019,21 +1028,36 @@ static int pbb_i_changelink(struct net_device *pbb_i,
 				err = 0;
 			}
 		}
+
+		if (key_info_map_del) {
+			if (err) {
+				pbb_err(pbb_i, "%s: Failed to lookup [key-s_vid:%d,c_vid:%d -> info-isid_type:%d,svid_action:%d,cvid_action:%d,i_sid:%d] mapping to PBB L2VPN AH RHT with err:0x%x! ptr:%p",
+				         __FUNCTION__,
+				         s_vid, c_vid,
+				         isid_type, cvlan_tci_action, svlan_tci_action, i_sid,
+				         err, ah_rhnode_core1);
+
+			        goto free_pbb_l2vpn_rhnodes;
+			}
+
+                        err = pbb_l2vpn_ah_rhnode_remove(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core1->rhnode_hash);
+                }
+
 		if (err) {
 			pbb_err(pbb_i, "%s: Failed to %s [key-s_vid:%d,c_vid:%d -> info-isid_type:%d,svid_action:%d,cvid_action:%d,i_sid:%d] mapping to PBB L2VPN AH RHT with err:0x%x! ptr:%p",
-				__FUNCTION__, key_info_map_verify ? "verify" : "insert",
+				__FUNCTION__, key_info_map_verify ? "verify" : key_info_map_del ? "delete" : "insert",
 				s_vid, c_vid,
 				isid_type, cvlan_tci_action, svlan_tci_action, i_sid,
 				err, ah_rhnode_core1);
 	
 			goto free_pbb_l2vpn_rhnodes;
-		} else {
-			pbb_info(pbb_i, "%s: Successfully %s [key-s_vid:%d,c_vid:%d -> info-isid_type:%d,svid_action:%d,cvid_action:%d,i_sid:%d] mapping as HASH[key-0x%x -> info-0x%x] to PBB P2VPN AH RHT",
-				 __FUNCTION__, key_info_map_verify ? "verified" : "inserted",
-				 s_vid, c_vid,
-				 isid_type, svlan_tci_action, cvlan_tci_action, i_sid,
-				 ah_rhnode_core1->rhnode_key, ah_rhnode_core1->rhnode_info.c_qinq_edge_hash_info);
 		}
+
+		pbb_info(pbb_i, "%s: Successfully %s [key-s_vid:%d,c_vid:%d -> info-isid_type:%d,svid_action:%d,cvid_action:%d,i_sid:%d] mapping as HASH[key-0x%x -> info-0x%x] to PBB P2VPN AH RHT",
+			 __FUNCTION__, key_info_map_verify ? "verify" : key_info_map_del ? "delete" : "insert",
+			 s_vid, c_vid,
+			 isid_type, svlan_tci_action, cvlan_tci_action, i_sid,
+			 ah_rhnode_core1->rhnode_key, ah_rhnode_core1->rhnode_info.c_qinq_edge_hash_info);
 
 		if (isid_type == PBB_L2VPN_RHNODE_TYPE_I_SID_TYPE_INFO_SHARED) {
 			pbb_info(pbb_i, "%s: Not %s key-i_sid:%d(edge) -> info-svid_action:%d,cvid_action:%d,s_vid:%d,c_vid:%d]mapping for shared ISID:%d",

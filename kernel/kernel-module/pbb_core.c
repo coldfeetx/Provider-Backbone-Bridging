@@ -14,8 +14,177 @@
 #include <linux/if_pbb.h>
 
 extern char pbb_l2vpn_bum_flood_mac_prefix[ETH_ALEN/2];
+extern char pbb_l2vpn_osirp_proto_dmac[ETH_ALEN];
 
 /***************************************** Generic PBB-B Routines ***********************************************/
+
+/******************** Open Simple I-Service Registration Protocol Routines *******************/
+struct sk_buff *pbb_l2vpn_alloc_osirp(struct net_device *pbb_b, u32 i_sid_or_b_vid, enum pbb_l2vpn_osirp_opc pbb_l2vpn_osirp_opcode)
+{
+	struct pbb_b_priv *b_priv = pbb_b ? netdev_priv(pbb_b) : NULL;
+	struct net_device *lowerdev = b_priv ? b_priv->lowerdev : NULL;
+        struct pbb_b_port *pbb_b_port = b_priv ? b_priv->pbb_b_port : NULL;
+	struct sk_buff *skb = NULL;
+	osirphdr *osirp_hdr = NULL;
+	int err = 0;
+	u32 i_sid = 0, bvlan_tci = 0;
+	pbb_info(pbb_b, "%s: TO SEND %d", __FUNCTION__, pbb_l2vpn_osirp_opcode);//REMOVE
+
+	if (!pbb_b || !b_priv || !lowerdev || !pbb_b_port) {
+		return NULL;
+	}
+
+	skb = dev_alloc_skb(200);
+	if (!skb) {
+		return NULL;
+	}
+
+	if (pbb_l2vpn_osirp_opcode == PBB_L2VPN_OSIRP_OPC_LEAVE_ALL) {
+		bvlan_tci = i_sid_or_b_vid;
+		i_sid = 0;
+	} else {
+		i_sid = i_sid_or_b_vid;
+		struct pbb_l2vpn_ah_rhnode ah_rhnode_core = {0};
+		struct pbb_l2vpn_ah_rhnode *ah_rhnode_core1 = NULL;
+        	err = pbb_l2vpn_ah_rhnode_type_i_sid_key_add(&ah_rhnode_core.rhnode_key, i_sid, PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_DIR_CORE);
+        	if (err) {
+        	        return NULL;
+        	}
+
+        	ah_rhnode_core1 = pbb_l2vpn_ah_rhnode_lookup(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core.rhnode_key);
+		if (!ah_rhnode_core1) {
+			return NULL;
+		}
+
+		bvlan_tci = ah_rhnode_core1->rhnode_info.b_vid_hash_info & PBB_L2VPN_RHNODE_TYPE_B_VID_INFO_MASK;
+	}
+
+	skb->dev = lowerdev;
+	skb->protocol = (pbb_b_port->flags & PBB_B_PORT_FLAGS_MODE_DOT1AD) ? htons(ETH_P_8021AD) : htons(ETH_P_8021Q);
+	//skb->vlan_tci = htonl(bvlan_tci);
+	skb_reserve(skb, sizeof(osirphdr));
+
+	osirp_hdr = skb_push(skb, sizeof(osirphdr));
+	ether_addr_copy(osirp_hdr->osirp_dmac, pbb_l2vpn_osirp_proto_dmac);
+	ether_addr_copy(osirp_hdr->osirp_smac, pbb_b->dev_addr);
+	osirp_hdr->bvlan_proto = (pbb_b_port->flags & PBB_B_PORT_FLAGS_MODE_DOT1AD) ? htons(ETH_P_8021AD) : htons(ETH_P_8021Q);
+	osirp_hdr->bvlan_tci = htons(bvlan_tci);
+	osirp_hdr->osirp_proto = htons(ETH_P_OSIRP);
+	osirp_hdr->osirp_isid = htonl(i_sid);
+	osirp_hdr->osirp_opc = pbb_l2vpn_osirp_opcode;
+
+	pbb_info(pbb_b, "%s: Sending pbb_l2vpn_osirp_opcode:%d for isid:%u and bvlan_tci:%u", __FUNCTION__, pbb_l2vpn_osirp_opcode, i_sid, bvlan_tci);
+	//osirp_hdr->reserved = 0;
+
+	return (skb);
+}
+
+
+int pbb_l2vpn_osirp_send_packet(struct net_device *pbb_b, u32 i_sid_or_b_vid, enum pbb_l2vpn_osirp_opc pbb_l2vpn_osirp_opcode)
+{
+	int ret = 0;
+	struct sk_buff *skb = NULL;
+	struct pbb_b_priv *b_priv = pbb_b ? netdev_priv(pbb_b) : NULL;
+
+	if (!b_priv || ((pbb_l2vpn_osirp_opcode <= PBB_L2VPN_OSIRP_OPC_INVALID) || (pbb_l2vpn_osirp_opcode >= (PBB_L2VPN_OSIRP_OPC_MAX + 1)))) {
+		return -EINVAL;
+	}
+
+	skb = pbb_l2vpn_alloc_osirp(pbb_b, i_sid_or_b_vid, pbb_l2vpn_osirp_opcode);
+	if (!skb) {
+		return -EINVAL;
+	}
+
+	ret = dev_queue_xmit(skb);
+
+	/* Do Tx stats accounting for PBB_B Device */
+	struct pbb_pcpu_stats *pcpu_stats = this_cpu_ptr(b_priv->pcpu_stats);
+	if (!pcpu_stats) {
+		return ret;
+	}
+
+	if (likely(ret == NET_XMIT_SUCCESS || ret == NET_XMIT_CN) || (ret == NETDEV_TX_OK)) {
+        	u64_stats_update_begin(&pcpu_stats->syncp);
+        	u64_stats_inc(&pcpu_stats->tx_packets);
+        	u64_stats_add(&pcpu_stats->tx_bytes, skb->len);
+                if (is_multicast_ether_addr(eth_hdr(skb)->h_dest))
+                        u64_stats_inc(&pcpu_stats->rx_multicast);
+        	u64_stats_update_end(&pcpu_stats->syncp);
+        } else {
+                this_cpu_inc(pcpu_stats->tx_dropped);
+        }
+
+	return ret;
+}
+
+int pbb_l2vpn_osirp_send_packet_walk(struct net_device *pbb_b, bool join_or_leave_all)
+{
+	struct pbb_b_priv *b_priv = pbb_b ? netdev_priv(pbb_b) : NULL;
+
+	if (!b_priv) {
+		return -EINVAL;
+	}
+
+	struct rhashtable_iter pbb_l2vpn_ah_rhnode_iter = {0};
+	rhashtable_walk_enter(&b_priv->pbb_l2vpn_ah_rht, &pbb_l2vpn_ah_rhnode_iter);
+	rhashtable_walk_start(&pbb_l2vpn_ah_rhnode_iter);
+
+	if (join_or_leave_all == true) {
+		struct pbb_l2vpn_ah_rhnode *ah_rhnode_core = NULL;
+		u32 i_sid = 0;
+		while ((ah_rhnode_core = (struct pbb_l2vpn_ah_rhnode *)rhashtable_walk_next(&pbb_l2vpn_ah_rhnode_iter)) != NULL) {
+			if (ah_rhnode_core == NULL)
+				continue;
+			// Check if PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_DIR_MASK type, if so for each isid send OSIRP Join
+			if (((ah_rhnode_core->rhnode_key) >> PBB_L2VPN_RHNODE_TYPE_I_SID_DIR_KEY_SHIFT) & PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_DIR_CORE) {
+				i_sid = ((u32)(ah_rhnode_core->rhnode_key) & PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_MASK);
+
+				pbb_l2vpn_osirp_send_packet(pbb_b, i_sid, PBB_L2VPN_OSIRP_OPC_JOIN);
+				pbb_info(pbb_b, "%s: Sent JOIN for i_sid:%u", __FUNCTION__, i_sid);
+			}
+		}
+	} else {
+		// Check if PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_DIR_MASK type, if so for each unique b_vid send OSIRP Leave_All
+		u32 bvlan_tci = 0;
+		for (bvlan_tci = 0; bvlan_tci < PBB_L2VPN_RHNODE_TYPE_B_VID_INFO_MASK; bvlan_tci++) {
+			if (b_priv->bvlan_tci_refcntmap[bvlan_tci] == 0)
+				continue;
+
+			pbb_l2vpn_osirp_send_packet(pbb_b, bvlan_tci, PBB_L2VPN_OSIRP_OPC_LEAVE_ALL);
+			pbb_info(pbb_b, "%s: Sent LEAVE_ALL for bvlan_tci:%u", __FUNCTION__, bvlan_tci);
+		}
+	}
+
+	rhashtable_walk_stop(&pbb_l2vpn_ah_rhnode_iter);
+	rhashtable_walk_exit(&pbb_l2vpn_ah_rhnode_iter);
+
+	return 0;
+}
+
+void pbb_l2vpn_osirp_timer_cb(struct timer_list *osirp_timer)
+{
+	if (!osirp_timer) return;
+
+	struct pbb_b_priv *b_priv = from_timer(b_priv, osirp_timer, pbb_l2vpn_osirp_timer);
+
+	struct net_device *pbb_b = b_priv ? b_priv->self_pbb_b : NULL;
+
+	if (!b_priv || !pbb_b) {
+		return;
+	}
+
+	pbb_info(pbb_b, "%s: invoked for PBB_B Instance %s", __FUNCTION__, pbb_b->name);
+	/* Craft and send 8021ah OSIRP Adv. packet as below (for each ISID) -
+	 * osirp_dmac = MRP_PBB_L2VPN_OSIRP_DMAC, osirp_smac: PBB_B Device Instance Mac
+	 * osirp_vlan_proto = PBB_B Port VID Mode, osirp_vlan_tci = PBB_B VID Map
+	 * osirp_proto = ETH_P_OSIRP, osirp_opc = PBB_L2VPN_OSIRP_OPC_JOIN, osirp_sid = PBB_B ISID Map
+	 */
+	pbb_l2vpn_osirp_send_packet_walk(pbb_b, true);
+
+	mod_timer(osirp_timer, jiffies + msecs_to_jiffies(PBB_L2VPN_OSIRP_TIMEOUT));
+}
+
+
 static int pbb_b_sync_address(struct net_device *pbb_b,
 			      const unsigned char *addr)
 {
@@ -1005,6 +1174,14 @@ static int pbb_b_newlink(struct net *src_net, struct net_device *pbb_b,
 	pbb_disable_gro(pbb_b);
 #endif
 
+	b_priv->bvlan_tci_refcntmap = kzalloc(sizeof(u32) * PBB_L2VPN_RHNODE_TYPE_B_VID_INFO_MASK, GFP_KERNEL);
+        if (!b_priv->bvlan_tci_refcntmap) {
+		pbb_err(pbb_b, "%s: Failed to initialize BVLAN TCI BITMAP error:-ENOMEM", __FUNCTION__);
+
+                goto err_fdb_rht_init_pbb_b;
+        }
+
+
 	pbb_info(pbb_b, "%s: PBB_B NewLink processed successfully",
 		 __FUNCTION__);
 
@@ -1142,7 +1319,7 @@ static int pbb_b_changelink(struct net_device *pbb_b,
 	struct pbb_b_port *pbb_b_port = NULL;
 	struct net_device *lowerdev = NULL;
 	bool skip_pbb_b_link_processing = false, sid_bvid_update = false;
-	u8 b_vid_mode = PBB_B_MODE_MAX, key_info_map_verify = 0;
+	u8 b_vid_mode = PBB_B_MODE_MAX, key_info_map_verify = 0, key_info_map_del = 0;
 	int err = 0;
 	int i = 0;
 
@@ -1240,6 +1417,8 @@ static int pbb_b_changelink(struct net_device *pbb_b,
 		pbb_info(pbb_b, "%s: Calling pbb_b_init() again after Lowerdev:%s linking!",
 			 __FUNCTION__, lowerdev->name);
 		pbb_b_init(pbb_b);
+
+		timer_setup(&b_priv->pbb_l2vpn_osirp_timer, pbb_l2vpn_osirp_timer_cb, 0);
 	}
 
 parse_next_arg:
@@ -1266,6 +1445,15 @@ parse_next_arg:
 			err = -ENODEV;
 			goto destroy_pbb_b_port;
 		}
+
+		sid_bvid_update = true;
+	}
+
+	if (data && data[IFLA_PBB_B_KEY_INFO_MAP_DEL]) {
+		pbb_info(pbb_b, "%s: Processing PBB_B Changelink PBB_B Key Info Map Del Notification",
+			 __FUNCTION__);
+
+		key_info_map_del = nla_get_u8(data[IFLA_PBB_B_KEY_INFO_MAP_DEL]);
 
 		sid_bvid_update = true;
 	}
@@ -1323,7 +1511,7 @@ parse_next_arg:
 	for (i_sid = i_sid_info_range_begin; i_sid <= i_sid_info_range_end; i_sid++) {
 		err = 0;
 
-		if (key_info_map_verify == 0) {
+		if ((key_info_map_del == 0) && (key_info_map_verify == 0)) {
 			ah_rhnode_core1 = pbb_l2vpn_ah_rhnode_alloc();
 			if (!ah_rhnode_core1) {
 				pbb_err(pbb_b, "%s: Failed to allocate PBB L2VPN AH RHNode!", __FUNCTION__);
@@ -1355,36 +1543,69 @@ parse_next_arg:
 		}
 	
 		err = -EINVAL;
-		if (key_info_map_verify == 0) {
+		if ((key_info_map_del == 0) && (key_info_map_verify == 0)) {
 			err = pbb_l2vpn_ah_rhnode_insert(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core1->rhnode_hash);
+			if (!err) {
+				pbb_l2vpn_osirp_send_packet(pbb_b, i_sid, PBB_L2VPN_OSIRP_OPC_JOIN);
+
+				b_priv->bvlan_tci_refcntmap[b_vid]++;
+				pbb_info(pbb_b, "%s: b_vid:%u refcount:%u after increment", __FUNCTION__, b_vid, b_priv->bvlan_tci_refcntmap[b_vid]);
+			}
 		} else {
 			ah_rhnode_core1 = pbb_l2vpn_ah_rhnode_lookup(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core1->rhnode_key);
 			if (ah_rhnode_core1 && (ah_rhnode_core.rhnode_info.b_vid_hash_info == ah_rhnode_core1->rhnode_info.b_vid_hash_info)) {
 				err = 0;
 			}
 		}
+
+		if (key_info_map_del) {
+                        if (err) {
+                                pbb_err(pbb_b, "%s: Failed to lookup [key-i_sid:%d(core) -> info-b_vid:%d] mapping to PBB L2VPN AH RHT with err:0x%x!",
+                                        __FUNCTION__,
+                                        i_sid,
+                                        b_vid,
+                                        err);
+
+                                goto free_pbb_l2vpn_rhnodes;
+                        }
+
+			err = pbb_l2vpn_ah_rhnode_remove(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core1->rhnode_hash);
+			if (!err) {
+				pbb_l2vpn_osirp_send_packet(pbb_b, i_sid, PBB_L2VPN_OSIRP_OPC_LEAVE);
+
+				if (b_priv->bvlan_tci_refcntmap[b_vid]) b_priv->bvlan_tci_refcntmap[b_vid]--;
+				pbb_info(pbb_b, "%s: b_vid:%u refcount:%u after decrement", __FUNCTION__, b_vid, b_priv->bvlan_tci_refcntmap[b_vid]);
+			}
+		}
+
 		if (err) {
 			pbb_err(pbb_b, "%s: Failed to %s [key-i_sid:%d(core) -> info-b_vid:%d] mapping to PBB L2VPN AH RHT with err:0x%x!",
-				__FUNCTION__, key_info_map_verify ? "verify" : "insert",
+				__FUNCTION__, key_info_map_verify ? "verify" : key_info_map_del ? "delete" : "insert",
 				i_sid,
 				b_vid,
 				err);
 	
 			goto free_pbb_l2vpn_rhnodes;
-		} else {
-			pbb_info(pbb_b, "%s: Successfully %s [key-i_sid:%d(core) -> info-b_vid:%d] mapping as HASH[key-0x%x -> info-0x%x] to PBB P2VPN AH RHT",
-				 __FUNCTION__, key_info_map_verify ? "verified" : "inserted",
-				 i_sid,
-				 b_vid,
-				 ah_rhnode_core1->rhnode_key, ah_rhnode_core1->rhnode_info.b_vid_hash_info);
+
 		}
+
+		pbb_info(pbb_b, "%s: Successfully %s [key-i_sid:%d(core) -> info-b_vid:%d] mapping as HASH[key-0x%x -> info-0x%x] to PBB P2VPN AH RHT",
+			__FUNCTION__, key_info_map_verify ? "verify" : key_info_map_del ? "delete" : "insert",
+			 i_sid,
+			 b_vid,
+			 ah_rhnode_core1->rhnode_key, ah_rhnode_core1->rhnode_info.b_vid_hash_info);
+
 
 		/* TODO: Not required to create and add [bvid -> isid] Mapping for now
 		 * Implement in future iff required */
 	
 		/* Now Iterate next */
 		if (b_vid < b_vid_info_range_end) b_vid++;
+
 	}
+
+	/* setup OSIRP timer interval to based on PBB_L2VPN_OSIRP_TIMEOUT Macro */
+	mod_timer(&b_priv->pbb_l2vpn_osirp_timer, jiffies + msecs_to_jiffies(PBB_L2VPN_OSIRP_TIMEOUT));
 
 return_success:
 	return 0;
@@ -1423,6 +1644,14 @@ static void pbb_b_dellink(struct net_device *pbb_b, struct list_head *head)
 		return;
 	}
 
+	/* Sign-off from OSIRP to trigger bulk flush for this PBB_B Port across all PBB-N/-B devices on the network */
+	pbb_l2vpn_osirp_send_packet_walk(pbb_b, false);
+
+	if (b_priv->bvlan_tci_refcntmap) {
+		kfree(b_priv->bvlan_tci_refcntmap);
+		b_priv->bvlan_tci_refcntmap = NULL;
+	}
+
 	/* Note : dellink() is called from default_device_exit_batch(),
 	 * before a rcu_synchronize() point. The devices are guaranteed
 	 * not being freed before one RCU grace period.
@@ -1449,6 +1678,8 @@ static void pbb_b_dellink(struct net_device *pbb_b, struct list_head *head)
 		 */
 	}
 	unregister_netdevice_queue(pbb_b, head);
+
+	del_timer(&b_priv->pbb_l2vpn_osirp_timer);
 }
 
 static struct net *pbb_b_get_link_net(const struct net_device *pbb_b)
