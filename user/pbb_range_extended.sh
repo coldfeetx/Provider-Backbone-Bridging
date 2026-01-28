@@ -47,9 +47,9 @@ bridge vlan add dev pbbi_0 vid 23
 ./ip/ip link set veth3 up
 ./ip/ip link set veth4 up
 ./ip/ip link set name br1 type bridge vlan_filtering 1 vlan_default_pvid 1003 vlan_protocol 802.1ad
-bridge vlan add vid 1003 dev br1 self
-bridge vlan add dev veth3 vid 1003
-bridge vlan add dev veth4 vid 1003
+bridge vlan add vid 1000-1003 dev br1 self
+bridge vlan add dev veth3 vid 1000-1003
+bridge vlan add dev veth4 vid 1000-1003
 
 ./ip/ip link add name br2 type bridge
 ./ip/ip link set br2 up

@@ -1487,7 +1487,7 @@ parse_next_arg:
 	}
 	
 	if ((!i_sid_info_range_begin || !i_sid_info_range_end || !b_vid_info_range_begin || !b_vid_info_range_end) ||
-	    ((b_vid_mode == PBB_B_MODE_MAX) && (key_info_map_verify == 0))) {
+	    ((b_vid_mode == PBB_B_MODE_MAX) && (key_info_map_verify == 0) && (key_info_map_del == 0))) {
 		pbb_err(pbb_b, "%s: ISID Range:%d-%d and/or B-VID Range:%d-%d and/or B-VID_Mode:%d all are not defined!",
 			__FUNCTION__, i_sid_info_range_begin, i_sid_info_range_end,
 			b_vid_info_range_begin, b_vid_info_range_end, b_vid_mode);
@@ -1569,10 +1569,10 @@ parse_next_arg:
                                 goto free_pbb_l2vpn_rhnodes;
                         }
 
+			pbb_l2vpn_osirp_send_packet(pbb_b, i_sid, PBB_L2VPN_OSIRP_OPC_LEAVE);
+
 			err = pbb_l2vpn_ah_rhnode_remove(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core1->rhnode_hash);
 			if (!err) {
-				pbb_l2vpn_osirp_send_packet(pbb_b, i_sid, PBB_L2VPN_OSIRP_OPC_LEAVE);
-
 				if (b_priv->bvlan_tci_refcntmap[b_vid]) b_priv->bvlan_tci_refcntmap[b_vid]--;
 				pbb_info(pbb_b, "%s: b_vid:%u refcount:%u after decrement", __FUNCTION__, b_vid, b_priv->bvlan_tci_refcntmap[b_vid]);
 			}
