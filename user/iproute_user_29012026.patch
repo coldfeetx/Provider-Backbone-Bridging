@@ -18,45 +18,6 @@ index 7d2995f..090132f 100644
  	IFLA_PBB_B_MAX,
  };
  
-diff --git a/ip/Makefile b/ip/Makefile
-index 2ae9df8..91f7bd9 100644
---- a/ip/Makefile
-+++ b/ip/Makefile
-@@ -5,7 +5,7 @@ IPOBJ=ip.o ipaddress.o ipaddrlabel.o iproute.o iprule.o ipnetns.o \
-     ipxfrm.o xfrm_state.o xfrm_policy.o xfrm_monitor.o iplink_dummy.o \
-     iplink_ifb.o iplink_nlmon.o iplink_team.o iplink_vcan.o iplink_vxcan.o \
-     iplink_vlan.o link_veth.o link_gre.o iplink_can.o iplink_xdp.o \
--    iplink_macvlan.o ipl2tp.o link_vti.o link_vti6.o link_xfrm.o \
-+    iplink_macvlan.o ipl2tp.o link_vti.o link_vti6.o link_xfrm.o link_pbb.o \
-     iplink_vxlan.o tcp_metrics.o iplink_ipoib.o ipnetconf.o link_ip6tnl.o \
-     link_iptnl.o link_gre6.o iplink_bond.o iplink_bond_slave.o iplink_hsr.o \
-     iplink_bridge.o iplink_bridge_slave.o ipfou.o iplink_ipvlan.o \
-diff --git a/ip/ip.c b/ip/ip.c
-index b07a5c7..0ba29e7 100644
---- a/ip/ip.c
-+++ b/ip/ip.c
-@@ -68,7 +68,7 @@ static void usage(void)
- 		"                   macsec | maddress | monitor | mptcp | mroute | mrule |\n"
- 		"                   neighbor | neighbour | netconf | netns | nexthop | ntable |\n"
- 		"                   ntbl | route | rule | sr | tap | tcpmetrics |\n"
--		"                   token | tunnel | tuntap | vrf | xfrm }\n"
-+		"                   token | tunnel | tuntap | vrf | xfrm | pbbb | pbbi }\n"
- 		"       OPTIONS := { -V[ersion] | -s[tatistics] | -d[etails] | -r[esolve] |\n"
- 		"                    -h[uman-readable] | -iec | -j[son] | -p[retty] |\n"
- 		"                    -f[amily] { inet | inet6 | mpls | bridge | link } |\n"
-diff --git a/ip/iplink.c b/ip/iplink.c
-index 18b2ea2..3ecd6de 100644
---- a/ip/iplink.c
-+++ b/ip/iplink.c
-@@ -57,7 +57,7 @@ void iplink_types_usage(void)
- 		"          macsec | macvlan | macvtap |\n"
- 		"          netdevsim | nlmon | rmnet | sit | team | team_slave |\n"
- 		"          vcan | veth | vlan | vrf | vti | vxcan | vxlan | wwan |\n"
--		"          xfrm }\n");
-+		"          xfrm | pbbb | pbbi }\n");
- }
- 
- void iplink_usage(void)
 diff --git a/ip/link_pbb.c b/ip/link_pbb.c
 index 96e6b38..a2fd542 100644
 --- a/ip/link_pbb.c
