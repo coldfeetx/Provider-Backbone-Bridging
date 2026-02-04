@@ -72,8 +72,9 @@ struct sk_buff *pbb_l2vpn_alloc_osirp(struct net_device *pbb_b, u32 i_sid_or_b_v
 	osirp_hdr->osirp_proto = htons(ETH_P_OSIRP);
 	osirp_hdr->osirp_isid = htonl(i_sid);
 	osirp_hdr->osirp_opc = pbb_l2vpn_osirp_opcode;
+	osirp_hdr->osirp_opc = htonl(osirp_hdr->osirp_opc);
 
-	pbb_info(pbb_b, "%s: Sending pbb_l2vpn_osirp_opcode:%d for isid:%u and bvlan_tci:%u", __FUNCTION__, pbb_l2vpn_osirp_opcode, i_sid, bvlan_tci);
+	pbb_info(pbb_b, "%s: Sending pbb_l2vpn_osirp_opcode:%d for isid:%u and bvlan_tci:%u", __FUNCTION__, osirp_hdr->osirp_opc, i_sid, bvlan_tci);
 	//osirp_hdr->reserved = 0;
 
 	return (skb);
@@ -125,13 +126,13 @@ int pbb_l2vpn_osirp_send_packet_walk(struct net_device *pbb_b, bool join_or_leav
 		return -EINVAL;
 	}
 
-	struct rhashtable_iter pbb_l2vpn_ah_rhnode_iter = {0};
-	rhashtable_walk_enter(&b_priv->pbb_l2vpn_ah_rht, &pbb_l2vpn_ah_rhnode_iter);
-	rhashtable_walk_start(&pbb_l2vpn_ah_rhnode_iter);
-
 	if (join_or_leave_all == true) {
 		struct pbb_l2vpn_ah_rhnode *ah_rhnode_core = NULL;
 		u32 i_sid = 0;
+
+		struct rhashtable_iter pbb_l2vpn_ah_rhnode_iter = {0};
+		rhashtable_walk_enter(&b_priv->pbb_l2vpn_ah_rht, &pbb_l2vpn_ah_rhnode_iter);
+		rhashtable_walk_start(&pbb_l2vpn_ah_rhnode_iter);
 		while ((ah_rhnode_core = (struct pbb_l2vpn_ah_rhnode *)rhashtable_walk_next(&pbb_l2vpn_ah_rhnode_iter)) != NULL) {
 			if (ah_rhnode_core == NULL)
 				continue;
@@ -143,6 +144,8 @@ int pbb_l2vpn_osirp_send_packet_walk(struct net_device *pbb_b, bool join_or_leav
 				pbb_info(pbb_b, "%s: Sent JOIN for i_sid:%u", __FUNCTION__, i_sid);
 			}
 		}
+		rhashtable_walk_stop(&pbb_l2vpn_ah_rhnode_iter);
+		rhashtable_walk_exit(&pbb_l2vpn_ah_rhnode_iter);
 	} else {
 		// Check if PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_DIR_MASK type, if so for each unique b_vid send OSIRP Leave_All
 		u32 bvlan_tci = 0;
@@ -154,9 +157,6 @@ int pbb_l2vpn_osirp_send_packet_walk(struct net_device *pbb_b, bool join_or_leav
 			pbb_info(pbb_b, "%s: Sent LEAVE_ALL for bvlan_tci:%u", __FUNCTION__, bvlan_tci);
 		}
 	}
-
-	rhashtable_walk_stop(&pbb_l2vpn_ah_rhnode_iter);
-	rhashtable_walk_exit(&pbb_l2vpn_ah_rhnode_iter);
 
 	return 0;
 }
@@ -868,7 +868,7 @@ static rx_handler_result_t pbb_b_handle_frame_from_core(struct sk_buff **pskb)
 		goto handle_failure;
         }
 
-	/* TODO: PBB-B Core Receive Path Processing Routine as per 8021ah.
+	/* TODO: PBB-B Core Receive Path Processing Routine as per 8021ah/OSIRP.
 	*/
 	dot1ah_outer_ethhdr_in *dot1ah_outer_eth_hdr_in = (dot1ah_outer_ethhdr_in *)eth_hdr(skb);
 
@@ -880,12 +880,11 @@ static rx_handler_result_t pbb_b_handle_frame_from_core(struct sk_buff **pskb)
 		goto handle_failure;
 	}
 
-#ifdef PBB_DEBUG
-	pbb_dump_skb(skb, RX);
-#endif // PBB_DEBUG
-
-	if (memcmp(dot1ah_outer_eth_hdr_in->bb_dmac, pbb_l2vpn_bum_flood_mac_prefix, ETH_ALEN/2) &&
-            memcmp(dot1ah_outer_eth_hdr_in->bb_dmac, pbb_b->dev_addr, ETH_ALEN)) {
+	if (((htons(dot1ah_outer_eth_hdr_in->bb_1ah_proto) == ETH_P_8021AH) &&
+	     memcmp(dot1ah_outer_eth_hdr_in->bb_dmac, pbb_l2vpn_bum_flood_mac_prefix, ETH_ALEN/2) &&
+	     memcmp(dot1ah_outer_eth_hdr_in->bb_dmac, pbb_b->dev_addr, ETH_ALEN)) ||
+	     ((htons(dot1ah_outer_eth_hdr_in->bb_1ah_proto) == ETH_P_OSIRP) &&
+             memcmp(dot1ah_outer_eth_hdr_in->bb_dmac, pbb_l2vpn_osirp_proto_dmac, ETH_ALEN))) {
 	        len = skb->len + ETH_HLEN;
 		ret = NET_RX_DROP;
 		handle_res = RX_HANDLER_PASS;
@@ -906,7 +905,8 @@ static rx_handler_result_t pbb_b_handle_frame_from_core(struct sk_buff **pskb)
 
 	u16 bb_vlan_tci = skb_vlan_tag_get_id(skb);
 
-	if (htons(dot1ah_outer_eth_hdr_in->bb_1ah_proto) != ETH_P_8021AH) {
+	if ((htons(dot1ah_outer_eth_hdr_in->bb_1ah_proto) != ETH_P_8021AH) &&
+	    (htons(dot1ah_outer_eth_hdr_in->bb_1ah_proto) != ETH_P_OSIRP)) {
 		goto handle_failure;
 	}
 
@@ -925,7 +925,121 @@ static rx_handler_result_t pbb_b_handle_frame_from_core(struct sk_buff **pskb)
         if (bb_vlan_tci != (ah_rhnode_core->rhnode_info.b_vid_hash_info & PBB_L2VPN_RHNODE_TYPE_B_VID_INFO_MASK)) {
 		goto handle_failure;
 	}
-    
+  
+	/* Add handling for OSIRP - JOIN, LEAVE, LEAVE_ALL
+	 * JOIN - Add PBB_MAC_TYPE_CORE Mac with PBB-B bridge
+	 * LEAVE - Flush PBB_MAC_TYPE_CORE_ULAY Macs based on ISID
+	 * LEAVE_ALL - Above and Flush PBB_MAC_TYPE_CORE Mac with PBB-B bridge
+	 * Anything else?
+	 */
+	if (htons(dot1ah_outer_eth_hdr_in->bb_1ah_proto) == ETH_P_OSIRP) {
+		osirphdr_in *osirp_hdr_in = (osirphdr_in *)dot1ah_outer_eth_hdr_in;
+	
+		if (ntohl(osirp_hdr_in->osirp_opc) == PBB_L2VPN_OSIRP_OPC_JOIN) {
+			struct pbb_l2vpn_fdb_rhnode_key fdb_rhnode_key = {0};
+			fdb_rhnode_key.type = PBB_MAC_TYPE_CORE_ULAY;
+			memcpy(fdb_rhnode_key.mac, osirp_hdr_in->osirp_smac, ETH_ALEN);
+			fdb_rhnode_key.pbb_l2vpn_bd = bb_vlan_tci;
+	
+			struct pbb_l2vpn_fdb_rhnode *fdb_rhnode_dest_ulay = pbb_l2vpn_fdb_rhnode_lookup(&b_priv->pbb_l2vpn_fdb_rht, &fdb_rhnode_key);
+			if (fdb_rhnode_dest_ulay &&
+			    (strcmp(fdb_rhnode_dest_ulay->fdb_ifinfo.core_ulay_ifinfo.lowerdev->name, lowerdev->name) ||
+			    !(fdb_rhnode_dest_ulay->fdb_rhnode_flags & PBB_MAC_FLAGS_DYNAMIC && !(fdb_rhnode_dest_ulay->fdb_rhnode_flags & PBB_MAC_FLAGS_CPLEARN)))) {
+				goto handle_failure;
+			}
+	
+			if (!fdb_rhnode_dest_ulay) {
+				fdb_rhnode_dest_ulay = pbb_l2vpn_fdb_rhnode_alloc();
+				if (fdb_rhnode_dest_ulay == NULL) {
+					goto handle_failure;
+				}
+	
+				memset(fdb_rhnode_dest_ulay, 0, sizeof(struct pbb_l2vpn_fdb_rhnode));
+	
+				fdb_rhnode_dest_ulay->fdb_rhnode_key.type = PBB_MAC_TYPE_CORE_ULAY;
+				memcpy(fdb_rhnode_dest_ulay->fdb_rhnode_key.mac, osirp_hdr_in->osirp_smac, ETH_ALEN);
+				fdb_rhnode_dest_ulay->fdb_rhnode_key.pbb_l2vpn_bd = bb_vlan_tci;
+	
+				fdb_rhnode_dest_ulay->fdb_ifinfo.core_ulay_ifinfo.lowerdev = lowerdev;
+				fdb_rhnode_dest_ulay->fdb_rhnode_flags = PBB_MAC_FLAGS_CPLEARN;
+				err = pbb_l2vpn_fdb_rhnode_insert(&b_priv->pbb_l2vpn_fdb_rht, &fdb_rhnode_dest_ulay->fdb_rhnode_hash);
+				if (err != 0) {
+					goto handle_failure;
+	
+				}
+			}
+	
+		} else {
+			struct pbb_l2vpn_fdb_rhnode *fdb_rhnode_mac_to_flush = NULL;
+	
+			struct rhashtable_iter fdb_rhnode_mac_to_flush_iter = {0};
+			rhashtable_walk_enter(&b_priv->pbb_l2vpn_fdb_rht, &fdb_rhnode_mac_to_flush_iter);
+			rhashtable_walk_start(&fdb_rhnode_mac_to_flush_iter);
+			struct pbb_l2vpn_fdb_rhnode *fdb_rhnode_mac_to_flush_prev = NULL;
+			u32 num_tot_macs_flushed = 0, num_core_macs_flushed = 0, num_core_ulay_macs_flushed = 0;
+	
+			while ((fdb_rhnode_mac_to_flush = (struct pbb_l2vpn_fdb_rhnode *)rhashtable_walk_next(&fdb_rhnode_mac_to_flush_iter)) != NULL) {
+			        if (fdb_rhnode_mac_to_flush == NULL)
+			                continue;
+	
+				if (fdb_rhnode_mac_to_flush_prev) {
+					pbb_l2vpn_fdb_rhnode_remove(&b_priv->pbb_l2vpn_fdb_rht, &fdb_rhnode_mac_to_flush_prev->fdb_rhnode_hash);
+	
+					pbb_l2vpn_fdb_rhnode_free(fdb_rhnode_mac_to_flush_prev);
+					fdb_rhnode_mac_to_flush_prev = NULL;
+				}
+	
+			        if (ntohl(osirp_hdr_in->osirp_opc) == PBB_L2VPN_OSIRP_OPC_LEAVE) {
+	
+			                pbb_info(pbb_b, "%s: FDB Entry [type:%d, i_sid:%u, Mac:%pM]",
+						 __FUNCTION__,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.type,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.pbb_l2vpn_bd,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.mac);
+	
+					if ((fdb_rhnode_mac_to_flush->fdb_rhnode_key.type != PBB_MAC_TYPE_CORE) ||
+					    (isid != fdb_rhnode_mac_to_flush->fdb_rhnode_key.pbb_l2vpn_bd) ||
+					    memcmp(fdb_rhnode_mac_to_flush->fdb_ifinfo.core_ifinfo.core_nh_mac, osirp_hdr_in->osirp_smac, ETH_ALEN))
+						continue;
+	
+			                pbb_info(pbb_b, "%s: To Flush CORE_ULAY FDB Entry [type:%d, i_sid:%u, Mac:%pM]",
+						 __FUNCTION__,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.type,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.pbb_l2vpn_bd,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.mac);
+	
+					fdb_rhnode_mac_to_flush_prev = fdb_rhnode_mac_to_flush;
+	
+					num_core_macs_flushed++;
+					num_tot_macs_flushed++;
+			        }
+			}
+	
+			if (fdb_rhnode_mac_to_flush_prev) {
+				pbb_l2vpn_fdb_rhnode_remove(&b_priv->pbb_l2vpn_fdb_rht, &fdb_rhnode_mac_to_flush_prev->fdb_rhnode_hash);
+	
+				pbb_l2vpn_fdb_rhnode_free(fdb_rhnode_mac_to_flush_prev);
+				fdb_rhnode_mac_to_flush_prev = NULL;
+			}
+	
+			pbb_info(pbb_b, "%s: Macs flushed stats: num_tot_macs_flushed:%u, num_core_macs_flushed:%u, num_core_ulay_macs_flushed:%u",
+				 __FUNCTION__, num_tot_macs_flushed, num_core_macs_flushed, num_core_ulay_macs_flushed);
+	
+			rhashtable_walk_stop(&fdb_rhnode_mac_to_flush_iter);
+			rhashtable_walk_exit(&fdb_rhnode_mac_to_flush_iter);
+		}
+	
+		len = skb->len + ETH_HLEN;
+		ret = NET_RX_SUCCESS;
+		handle_res = RX_HANDLER_CONSUMED;
+	
+		goto update_rx_stats;
+	}
+
+#ifdef PBB_DEBUG
+	pbb_dump_skb(skb, RX);
+#endif // PBB_DEBUG
+
 	struct pbb_l2vpn_fdb_rhnode_key fdb_rhnode_key = {0};
         fdb_rhnode_key.type = PBB_MAC_TYPE_CORE_ULAY;
         memcpy(fdb_rhnode_key.mac, dot1ah_outer_eth_hdr_in->bb_smac, ETH_ALEN);
@@ -1573,9 +1687,41 @@ parse_next_arg:
 
 			err = pbb_l2vpn_ah_rhnode_remove(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core1->rhnode_hash);
 			if (!err) {
-				if (b_priv->bvlan_tci_refcntmap[b_vid]) b_priv->bvlan_tci_refcntmap[b_vid]--;
+				if (b_priv->bvlan_tci_refcntmap[b_vid] > 0) b_priv->bvlan_tci_refcntmap[b_vid]--;
 				pbb_info(pbb_b, "%s: b_vid:%u refcount:%u after decrement", __FUNCTION__, b_vid, b_priv->bvlan_tci_refcntmap[b_vid]);
 			}
+
+                	struct pbb_l2vpn_ah_rhnode *ah_rhnode_core = NULL, *ah_rhnode_core_prev = NULL;
+                	struct rhashtable_iter pbb_l2vpn_ah_rhnode_iter = {0};
+
+			// TODO: In future, add more debugs as required
+			rhashtable_walk_enter(&b_priv->pbb_l2vpn_ah_rht, &pbb_l2vpn_ah_rhnode_iter);
+			rhashtable_walk_start(&pbb_l2vpn_ah_rhnode_iter);
+			while ((ah_rhnode_core = (struct pbb_l2vpn_ah_rhnode *)rhashtable_walk_next(&pbb_l2vpn_ah_rhnode_iter)) != NULL) {
+				if (ah_rhnode_core_prev) {
+					pbb_l2vpn_ah_rhnode_remove(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core_prev->rhnode_hash);
+
+					pbb_info(pbb_b, "%s: Removing HASH[key-0x%x -> info-0x%x]",
+						 __FUNCTION__, ah_rhnode_core_prev->rhnode_key, ah_rhnode_core_prev->rhnode_info.b_vid_hash_info);
+
+					pbb_l2vpn_ah_rhnode_free(ah_rhnode_core_prev);
+					ah_rhnode_core_prev = NULL;
+				}
+
+			        if (ah_rhnode_core == NULL)
+			                continue;
+
+			        // Check if PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_DIR_MASK type, if so for info sid matching isid, delete
+			        if (pbb_l2vpn_ah_rhnode_is_type_c_qinq_key(ah_rhnode_core->rhnode_key) &&
+				    (((ah_rhnode_core->rhnode_info.c_qinq_edge_hash_info) & PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_MASK) == i_sid)) {
+				    	ah_rhnode_core_prev = ah_rhnode_core;
+			        } else if (pbb_l2vpn_ah_rhnode_is_type_i_sid_key(ah_rhnode_core->rhnode_key) &&
+					  (((ah_rhnode_core->rhnode_key) & PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_MASK) == i_sid)) {
+					ah_rhnode_core_prev = ah_rhnode_core;
+				}
+			}
+			rhashtable_walk_stop(&pbb_l2vpn_ah_rhnode_iter);
+			rhashtable_walk_exit(&pbb_l2vpn_ah_rhnode_iter);
 		}
 
 		if (err) {
@@ -1595,6 +1741,7 @@ parse_next_arg:
 			 b_vid,
 			 ah_rhnode_core1->rhnode_key, ah_rhnode_core1->rhnode_info.b_vid_hash_info);
 
+		if (key_info_map_del) pbb_l2vpn_ah_rhnode_free(ah_rhnode_core1);
 
 		/* TODO: Not required to create and add [bvid -> isid] Mapping for now
 		 * Implement in future iff required */
