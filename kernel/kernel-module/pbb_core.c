@@ -1692,8 +1692,7 @@ parse_next_arg:
 			}
 
 
-			// Flush L2VPN FDB RHNODE DB
-			//SOUMIK: FIXME & TODO: Flush all PBB_MAC_TYPE_EDGE/PBB_MAC_TYPE_CORE Macs
+			// Flush L2VPN FDB RHNODE DB for PBB_MAC_TYPE_EDGE/PBB_MAC_TYPE_CORE Macs with l2vpn_bd matching i_sid
         		struct pbb_l2vpn_fdb_rhnode *fdb_rhnode_mac_to_flush = NULL;
 
         		struct rhashtable_iter fdb_rhnode_mac_to_flush_iter = {0};
