@@ -1691,6 +1691,66 @@ parse_next_arg:
 				pbb_info(pbb_b, "%s: b_vid:%u refcount:%u after decrement", __FUNCTION__, b_vid, b_priv->bvlan_tci_refcntmap[b_vid]);
 			}
 
+
+			// Flush L2VPN FDB RHNODE DB
+			//SOUMIK: FIXME & TODO: Flush all PBB_MAC_TYPE_EDGE/PBB_MAC_TYPE_CORE Macs
+        		struct pbb_l2vpn_fdb_rhnode *fdb_rhnode_mac_to_flush = NULL;
+
+        		struct rhashtable_iter fdb_rhnode_mac_to_flush_iter = {0};
+        		rhashtable_walk_enter(&b_priv->pbb_l2vpn_fdb_rht, &fdb_rhnode_mac_to_flush_iter);
+        		rhashtable_walk_start(&fdb_rhnode_mac_to_flush_iter);
+			struct pbb_l2vpn_fdb_rhnode *fdb_rhnode_mac_to_flush_prev = NULL;
+			u32 num_tot_macs_flushed = 0, num_edge_macs_flushed = 0, num_core_macs_flushed = 0;
+
+        		while ((fdb_rhnode_mac_to_flush = (struct pbb_l2vpn_fdb_rhnode *)rhashtable_walk_next(&fdb_rhnode_mac_to_flush_iter)) != NULL) {
+        		        if (fdb_rhnode_mac_to_flush == NULL)
+        		                continue;
+
+				if (fdb_rhnode_mac_to_flush_prev) {
+					pbb_l2vpn_fdb_rhnode_remove(&b_priv->pbb_l2vpn_fdb_rht, &fdb_rhnode_mac_to_flush_prev->fdb_rhnode_hash);
+
+					pbb_l2vpn_fdb_rhnode_free(fdb_rhnode_mac_to_flush_prev);
+					fdb_rhnode_mac_to_flush_prev = NULL;
+				}
+
+        		        pbb_info(pbb_b, "%s: FDB Entry [type:%d, i_sid:%u, Mac:%pM]",
+					 __FUNCTION__,
+					 fdb_rhnode_mac_to_flush->fdb_rhnode_key.type,
+					 fdb_rhnode_mac_to_flush->fdb_rhnode_key.pbb_l2vpn_bd,
+					 fdb_rhnode_mac_to_flush->fdb_rhnode_key.mac);
+
+				if ((fdb_rhnode_mac_to_flush->fdb_rhnode_key.type != PBB_MAC_TYPE_CORE_ULAY) &&
+				    (i_sid == fdb_rhnode_mac_to_flush->fdb_rhnode_key.pbb_l2vpn_bd)) {
+        		        	pbb_info(pbb_b, "%s: To Flush FDB Entry [type:%d, i_sid:%u, Mac:%pM]",
+						 __FUNCTION__,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.type,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.pbb_l2vpn_bd,
+						 fdb_rhnode_mac_to_flush->fdb_rhnode_key.mac);
+
+					fdb_rhnode_mac_to_flush_prev = fdb_rhnode_mac_to_flush;
+
+					if (fdb_rhnode_mac_to_flush->fdb_rhnode_key.type == PBB_MAC_TYPE_CORE)
+						num_core_macs_flushed++;
+					else
+						num_edge_macs_flushed++;
+					num_tot_macs_flushed++;
+				}
+        		}
+
+			if (fdb_rhnode_mac_to_flush_prev) {
+				pbb_l2vpn_fdb_rhnode_remove(&b_priv->pbb_l2vpn_fdb_rht, &fdb_rhnode_mac_to_flush_prev->fdb_rhnode_hash);
+
+				pbb_l2vpn_fdb_rhnode_free(fdb_rhnode_mac_to_flush_prev);
+				fdb_rhnode_mac_to_flush_prev = NULL;
+			}
+
+			pbb_info(pbb_b, "%s: Macs flushed stats: num_tot_macs_flushed:%u, num_edge_macs_flushed:%u, num_core_macs_flushed:%u",
+				 __FUNCTION__, num_tot_macs_flushed, num_edge_macs_flushed, num_core_macs_flushed);
+
+        		rhashtable_walk_stop(&fdb_rhnode_mac_to_flush_iter);
+        		rhashtable_walk_exit(&fdb_rhnode_mac_to_flush_iter);
+
+			// Flush L2VPN AH RHNODE DB
                 	struct pbb_l2vpn_ah_rhnode *ah_rhnode_core = NULL, *ah_rhnode_core_prev = NULL;
                 	struct rhashtable_iter pbb_l2vpn_ah_rhnode_iter = {0};
 
