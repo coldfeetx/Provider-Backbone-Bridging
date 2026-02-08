@@ -51,7 +51,7 @@ struct sk_buff *pbb_l2vpn_alloc_osirp(struct net_device *pbb_b, u32 i_sid_or_b_v
         	        return NULL;
         	}
 
-        	ah_rhnode_core1 = pbb_l2vpn_ah_rhnode_lookup(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core.rhnode_key);
+		ah_rhnode_core1 = pbb_l2vpn_ah_rhnode_lookup(&b_priv->pbb_l2vpn_ah_rht, &ah_rhnode_core.rhnode_key);
 		if (!ah_rhnode_core1) {
 			return NULL;
 		}
@@ -105,14 +105,14 @@ int pbb_l2vpn_osirp_send_packet(struct net_device *pbb_b, u32 i_sid_or_b_vid, en
 	}
 
 	if (likely(ret == NET_XMIT_SUCCESS || ret == NET_XMIT_CN) || (ret == NETDEV_TX_OK)) {
-        	u64_stats_update_begin(&pcpu_stats->syncp);
-        	u64_stats_inc(&pcpu_stats->tx_packets);
-        	u64_stats_add(&pcpu_stats->tx_bytes, skb->len);
-                if (is_multicast_ether_addr(eth_hdr(skb)->h_dest))
-                        u64_stats_inc(&pcpu_stats->rx_multicast);
-        	u64_stats_update_end(&pcpu_stats->syncp);
+		u64_stats_update_begin(&pcpu_stats->syncp);
+		u64_stats_inc(&pcpu_stats->tx_packets);
+		u64_stats_add(&pcpu_stats->tx_bytes, skb->len);
+		if (is_multicast_ether_addr(eth_hdr(skb)->h_dest))
+			u64_stats_inc(&pcpu_stats->rx_multicast);
+		u64_stats_update_end(&pcpu_stats->syncp);
         } else {
-                this_cpu_inc(pcpu_stats->tx_dropped);
+		this_cpu_inc(pcpu_stats->tx_dropped);
         }
 
 	return ret;
@@ -537,14 +537,14 @@ static netdev_tx_t pbb_b_xmit(struct sk_buff *skb, struct net_device *pbb_b)
 	}
 
 	if (likely(ret == NET_XMIT_SUCCESS || ret == NET_XMIT_CN) || (ret == NETDEV_TX_OK)) {
-        	u64_stats_update_begin(&pcpu_stats->syncp);
-        	u64_stats_inc(&pcpu_stats->tx_packets);
-        	u64_stats_add(&pcpu_stats->tx_bytes, len);
-                if (is_multicast_ether_addr(eth_hdr(skb)->h_dest))
-                        u64_stats_inc(&pcpu_stats->rx_multicast);
-        	u64_stats_update_end(&pcpu_stats->syncp);
+		u64_stats_update_begin(&pcpu_stats->syncp);
+		u64_stats_inc(&pcpu_stats->tx_packets);
+		u64_stats_add(&pcpu_stats->tx_bytes, len);
+		if (is_multicast_ether_addr(eth_hdr(skb)->h_dest))
+			u64_stats_inc(&pcpu_stats->rx_multicast);
+		u64_stats_update_end(&pcpu_stats->syncp);
         } else {
-                this_cpu_inc(pcpu_stats->tx_dropped);
+		this_cpu_inc(pcpu_stats->tx_dropped);
         }
 
         return ret;
