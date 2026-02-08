@@ -23,7 +23,7 @@ struct sk_buff *pbb_l2vpn_alloc_osirp(struct net_device *pbb_b, u32 i_sid_or_b_v
 {
 	struct pbb_b_priv *b_priv = pbb_b ? netdev_priv(pbb_b) : NULL;
 	struct net_device *lowerdev = b_priv ? b_priv->lowerdev : NULL;
-        struct pbb_b_port *pbb_b_port = b_priv ? b_priv->pbb_b_port : NULL;
+	struct pbb_b_port *pbb_b_port = b_priv ? b_priv->pbb_b_port : NULL;
 	struct sk_buff *skb = NULL;
 	osirphdr *osirp_hdr = NULL;
 	int err = 0;
@@ -166,7 +166,6 @@ void pbb_l2vpn_osirp_timer_cb(struct timer_list *osirp_timer)
 	if (!osirp_timer) return;
 
 	struct pbb_b_priv *b_priv = from_timer(b_priv, osirp_timer, pbb_l2vpn_osirp_timer);
-
 	struct net_device *pbb_b = b_priv ? b_priv->self_pbb_b : NULL;
 
 	if (!b_priv || !pbb_b) {
