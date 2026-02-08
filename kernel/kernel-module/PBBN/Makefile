@@ -11,7 +11,7 @@
 
 obj-m+= pbbn.o
 
-pbb-objs+= pbbn_netfilter_core.o pbbn_netfilter.o
+pbb-objs+= pbbn_netfilter_core.o pbbn_flood.o
 
 #CFLAGS+= -Wno-implicit-fallthrough
 
