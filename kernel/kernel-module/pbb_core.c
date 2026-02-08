@@ -206,14 +206,14 @@ static int pbb_b_sync_address(struct net_device *pbb_b,
 static inline struct net_device *
 pbb_b_get_lowerdev(const struct net_device *pbb_b)
 {
-        struct pbb_b_priv *b_priv = netdev_priv(pbb_b);
+	struct pbb_b_priv *b_priv = netdev_priv(pbb_b);
 	struct net_device *lowerdev = b_priv ? b_priv->lowerdev : NULL;
-
+	
 	if (!b_priv || !lowerdev) {
 		return NULL;
 	}
-
-        return lowerdev;
+	
+	return lowerdev;
 }
 
 /***************************************** B-Driver Netdevice Routines ****************************************/
