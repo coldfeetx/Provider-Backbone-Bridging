@@ -231,20 +231,20 @@ static int pbb_b_init(struct net_device *pbb_b)
 		 lowerdev ? lowerdev->name : "NULL");
 
 	pbb_b->state		= (pbb_b->state & ~PBB_B_STATE_MASK);
-        pbb_b->features		= PBB_B_FEATURES;
-        pbb_b->features		|= PBB_B_ALWAYS_ON_FEATURES;
-        pbb_b->hw_features	|= NETIF_F_LRO;
-        pbb_b->vlan_features	= PBB_B_FEATURES;
-        pbb_b->vlan_features	|= PBB_B_ALWAYS_ON_OFFLOADS;
-        pbb_b->hw_enc_features	|= pbb_b->features;
+	pbb_b->features		= PBB_B_FEATURES;
+	pbb_b->features		|= PBB_B_ALWAYS_ON_FEATURES;
+	pbb_b->hw_features	|= NETIF_F_LRO;
+	pbb_b->vlan_features	= PBB_B_FEATURES;
+	pbb_b->vlan_features	|= PBB_B_ALWAYS_ON_OFFLOADS;
+	pbb_b->hw_enc_features	|= pbb_b->features;
 	pbb_b->priv_flags	|= IFF_PBB_B;
 
 	if (lowerdev) {
 		pbb_b->state |= (lowerdev->state & PBB_B_STATE_MASK);
 		pbb_b->features |= lowerdev->features;
 		pbb_b->vlan_features |= lowerdev->vlan_features;
-	        netif_inherit_tso_max(pbb_b, lowerdev);
-        	pbb_b->hard_header_len = lowerdev->hard_header_len;
+		netif_inherit_tso_max(pbb_b, lowerdev);
+		pbb_b->hard_header_len = lowerdev->hard_header_len;
 		/* Get PBB_B's reference to lowerdev */
 		netdev_hold(lowerdev, &b_priv->dev_tracker, GFP_KERNEL);
 	}
