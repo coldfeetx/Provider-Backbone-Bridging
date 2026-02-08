@@ -46,7 +46,7 @@ struct sk_buff *pbb_l2vpn_alloc_osirp(struct net_device *pbb_b, u32 i_sid_or_b_v
 		i_sid = i_sid_or_b_vid;
 		struct pbb_l2vpn_ah_rhnode ah_rhnode_core = {0};
 		struct pbb_l2vpn_ah_rhnode *ah_rhnode_core1 = NULL;
-        	err = pbb_l2vpn_ah_rhnode_type_i_sid_key_add(&ah_rhnode_core.rhnode_key, i_sid, PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_DIR_CORE);
+		err = pbb_l2vpn_ah_rhnode_type_i_sid_key_add(&ah_rhnode_core.rhnode_key, i_sid, PBB_L2VPN_RHNODE_TYPE_I_SID_KEY_DIR_CORE);
         	if (err) {
         	        return NULL;
         	}
